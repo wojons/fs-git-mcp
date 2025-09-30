@@ -1,0 +1,41 @@
+[project]
+name = "fs-git-mcp"
+version = "0.1.0"
+description = "MCP Git-enforced filesystem with direct and staged modes"
+authors = [{name = "Anything Agent"}]
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.0",
+    "typer>=0.9",
+    "rich>=13.0",
+    "gitpython>=3.1",
+    "dulwich>=0.21; optional",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "hypothesis>=6.0",
+    "ruff>=0.1",
+    "black>=23.0",
+    "mypy>=1.0",
+    "pre-commit>=3.0",
+]
+
+[project.scripts]
+fs-git = "mcp_server.cli.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 88
+target-version = "py3.11"
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[tool.mypy]
+python_version = "3.11"
