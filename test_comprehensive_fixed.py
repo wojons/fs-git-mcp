@@ -91,9 +91,9 @@ def test_staged_workflow(repo_dir: str) -> Dict[str, Any]:
     """Test staged workflow."""
     print("\n=== Testing Staged Workflow ===")
     
-    # Start staged session
+# Start staged session
     result = run_command([
-        "fs-git", "staged-start",
+        "fs-git", "staged", "start",
         "--repo", repo_dir,
         "--ticket", "T-123"
     ])
@@ -106,7 +106,7 @@ def test_staged_workflow(repo_dir: str) -> Dict[str, Any]:
     
     # Staged write
     result = run_command([
-        "fs-git", "staged-write",
+        "fs-git", "staged", "write",
         "--session", session_id,
         "--repo", repo_dir,
         "--path", "staged.txt",
@@ -118,7 +118,7 @@ def test_staged_workflow(repo_dir: str) -> Dict[str, Any]:
     
     # Preview changes
     result = run_command([
-        "fs-git", "staged-preview",
+        "fs-git", "staged", "preview",
         "--session", session_id
     ])
     
@@ -127,7 +127,7 @@ def test_staged_workflow(repo_dir: str) -> Dict[str, Any]:
     
     # Finalize session
     result = run_command([
-        "fs-git", "staged-finalize",
+        "fs-git", "staged", "finalize",
         "--session", session_id,
         "--strategy", "merge-ff"
     ])
@@ -174,7 +174,7 @@ class Calculator:
     
     # Test reader extract
     result = run_command([
-        "fs-git", "reader-extract",
+        "fs-git", "reader", "extract",
         "--repo", repo_dir,
         "--path", "code.py",
         "--query", "def hello",
@@ -190,7 +190,7 @@ class Calculator:
     
     # Test reader answer
     result = run_command([
-        "fs-git", "reader-answer",
+        "fs-git", "reader", "answer",
         "--repo", repo_dir,
         "--path", "code.py",
         "--question", "What functions are defined in this file?"
