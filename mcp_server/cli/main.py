@@ -17,6 +17,37 @@ app.add_typer(reader_app, name="reader")
 
 
 @app.command()
+def init(repo_root: str = typer.Argument(..., help="Repository root path")):
+    """
+    Initialize a git repository for fs-git usage.
+    """
+    import subprocess
+    import os
+    
+    # Create directory if it doesn't exist
+    os.makedirs(repo_root, exist_ok=True)
+    
+    # Initialize git repo
+    subprocess.run(["git", "init", repo_root], check=True)
+    
+    # Set safe.directory
+    subprocess.run(["git", "config", "--global", "--add", "safe.directory", repo_root], check=True)
+    
+    # Set default user if not configured
+    try:
+        subprocess.run(["git", "-C", repo_root, "config", "user.name"], check=True, capture_output=True)
+    except subprocess.CalledProcessError:
+        subprocess.run(["git", "-C", repo_root, "config", "user.name", "FS-Git User"], check=True)
+    
+    try:
+        subprocess.run(["git", "-C", repo_root, "config", "user.email"], check=True, capture_output=True)
+    except subprocess.CalledProcessError:
+        subprocess.run(["git", "-C", repo_root, "config", "user.email", "fs-git@example.com"], check=True)
+    
+    typer.echo(f"Initialized git repository at {repo_root}")
+
+
+@app.command()
 def write(repo: str = typer.Option(..., "--repo", help="Repository root path"), 
          path: str = typer.Option(..., "--path", help="File path"), 
          file: Optional[str] = typer.Option(None, "--file", help="File to read content from"), 
@@ -174,26 +205,25 @@ def replace(repo: str = typer.Option(..., "--repo", help="Repository root path")
 def patch(repo: str = typer.Option(..., "--repo", help="Repository root path"), 
           path: str = typer.Option(..., "--path", help="File path"), 
           file: Optional[str] = typer.Option(None, "--file", help="Patch file"), 
-          commit: bool = typer.Option(False, "--commit", help="Commit changes"), 
           summary: str = typer.Option("apply patch", "--summary", help="Commit summary")):
     """
-    Apply patch to file and optionally commit.
+    Apply patch to file and commit.
     """
     from ..tools.integrate_code_diff import apply_patch_and_commit
     repo_ref = RepoRef(root=repo)
     template = load_default_template()
     
-    if file:
+    if file and file != '-':
         with open(file, 'r') as f:
             patch_content = f.read()
+    elif not sys.stdin.isatty() or file == '-':
+        # Read from stdin if it's not a TTY (i.e., piped input) or explicitly requested
+        patch_content = sys.stdin.read()
     else:
         patch_content = typer.prompt("Patch content")
     
-    if commit:
-        result = apply_patch_and_commit(repo_ref, path, patch_content, template)
-        typer.echo(f"Applied patch and committed {result}")
-    else:
-        typer.echo(f"Would apply patch to {path}")
+    result = apply_patch_and_commit(repo_ref, path, patch_content, template)
+    typer.echo(f"Applied patch and committed {result}")
 
 
 @app.command()

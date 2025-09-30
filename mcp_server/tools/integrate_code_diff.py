@@ -27,7 +27,7 @@ def preview_diff(repo: RepoRef, path: str, modified_content: str, ignore_whitesp
     return '\n'.join(diff)
 
 
-def apply_patch_and_commit(repo: RepoRef, path: str, patch: str, template: CommitTemplate = None, staged: bool = False, summary: str = "apply patch") -> str:
+def apply_patch_and_commit(repo: RepoRef, path: str, patch: str, template: Optional[CommitTemplate] = None, staged: bool = False, summary: str = "apply patch") -> str:
     """
     Apply patch and commit.
     """
@@ -37,10 +37,54 @@ def apply_patch_and_commit(repo: RepoRef, path: str, patch: str, template: Commi
     with open(abs_path, 'r') as f:
         content = f.read()
     
-    # Simple patch application (for demo, use a proper library in production)
-    lines = content.split('\n')
-    # Placeholder for patch application
-    new_content = content  # For now, no change
+    # Parse unified diff format and apply changes
+    lines: list[str] = content.split('\n')
+    new_lines_list: list[str] = lines.copy()
+    
+    # Simple unified diff parser
+    patch_lines = patch.strip().split('\n')
+    i = 0
+    while i < len(patch_lines):
+        line = patch_lines[i]
+        if line.startswith('@@'):
+            # Parse hunk header
+            # Format: @@ -old_start,old_lines +new_start,new_lines @@
+            import re
+            hunk_match = re.match(r'@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@', line)
+            if hunk_match:
+                old_start = int(hunk_match.group(1))
+                old_lines = int(hunk_match.group(2)) if hunk_match.group(2) else 1
+                new_start = int(hunk_match.group(3))
+                new_lines_count = int(hunk_match.group(4)) if hunk_match.group(4) else 1
+                
+                # Apply hunk
+                i += 1
+                old_idx = old_start - 1  # Convert to 0-based
+                new_idx = new_start - 1
+                
+                while i < len(patch_lines) and not patch_lines[i].startswith('@@') and not patch_lines[i].startswith('---') and not patch_lines[i].startswith('+++'):
+                    patch_line = patch_lines[i]
+                    if patch_line.startswith(' '):
+                        # Context line - should match
+                        if old_idx < len(new_lines_list) and new_lines_list[old_idx] != patch_line[1:]:
+                            raise ValueError(f"Context mismatch at line {old_idx + 1}")
+                        old_idx += 1
+                        new_idx += 1
+                    elif patch_line.startswith('-'):
+                        # Removal line
+                        if old_idx < len(new_lines_list):
+                            new_lines_list.pop(old_idx)
+                        new_idx += 1
+                    elif patch_line.startswith('+'):
+                        # Addition line
+                        new_lines_list.insert(old_idx, patch_line[1:])
+                        old_idx += 1
+                        new_idx += 1
+                    i += 1
+                continue
+        i += 1
+    
+    new_content = '\n'.join(new_lines_list)
     
     variables = {'op': 'patch', 'path': path, 'summary': summary}
     if template is None:

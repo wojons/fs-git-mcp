@@ -44,6 +44,7 @@ from .tools.integrate_file_system import (
 )
 from .git_backend.repo import RepoRef
 from .git_backend.templates import CommitTemplate, load_default_template
+from .git_backend.commits import lint_commit_message as lint_commit_msg
 
 class MCPServer:
     """Simple MCP server implementation."""
@@ -315,7 +316,7 @@ class MCPServer:
             template,
             params.get("summary", "text replacement")
         )
-        return result.model_dump()
+        return {"commit_sha": result}
     
     def handle_batch_replace_and_commit(self, params: Dict[str, Any]) -> Dict[str, Any]:
         repo_ref = RepoRef(root=params["repo"])
@@ -332,7 +333,7 @@ class MCPServer:
             template,
             params.get("summary", "batch text replacement")
         )
-        return result
+        return {"commit_shas": result}
     
     def handle_preview_diff(self, params: Dict[str, Any]) -> Dict[str, Any]:
         repo_ref = RepoRef(root=params["repo"])
@@ -361,7 +362,7 @@ class MCPServer:
             template,
             params.get("summary", "apply patch")
         )
-        return result.model_dump()
+        return {"commit_sha": result}
     
     def handle_read_file(self, params: Dict[str, Any]) -> Dict[str, Any]:
         repo_ref = RepoRef(root=params["repo"])
@@ -384,7 +385,6 @@ class MCPServer:
         return result
     
     def handle_lint_commit_message(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        from ..git_backend.commits import lint_commit_message
         template_data = params["template"]
         template = CommitTemplate(
             subject=template_data["subject"],
@@ -392,7 +392,7 @@ class MCPServer:
             trailers=template_data.get("trailers"),
             enforce_unique_window=template_data.get("enforce_unique_window", 100)
         )
-        result = lint_commit_message(template, params["variables"])
+        result = lint_commit_msg(template, params["variables"])
         return result
 
 def main():

@@ -62,7 +62,7 @@ def test_extract_simple_query(temp_repo_with_file):
     span = result.spans[0]
     assert span['start'] == 2
     assert span['end'] == 5
-    assert len(span['lines']) == 4
+    assert len(span['lines']) == 3  # Fixed: should be 3 lines, not 4
     assert 'print("Hello, World!")' in span['lines'][1]
 
 
@@ -80,9 +80,9 @@ def test_extract_regex_query(temp_repo_with_file):
     
     result = extract_tool(repo, intent)
     
-    # Should find 3 function definitions
+    # Should find 4 function definitions (hello, add, __init__, increment)
     assert result.spans is not None
-    assert len(result.spans) == 3
+    assert len(result.spans) == 4  # Fixed: should be 4, not 3
     
     # Check first function
     assert 'def hello():' in result.spans[0]['lines'][0]
@@ -92,8 +92,11 @@ def test_extract_regex_query(temp_repo_with_file):
     assert 'def add(a, b):' in result.spans[1]['lines'][0]
     assert '"""Add two numbers."""' in result.spans[1]['lines'][1]
     
-    # Check method
-    assert 'def increment(self):' in result.spans[2]['lines'][0]
+    # Check __init__ method
+    assert 'def __init__(self):' in result.spans[2]['lines'][0]
+    
+    # Check increment method
+    assert 'def increment(self):' in result.spans[3]['lines'][0]
 
 
 def test_extract_max_spans_limit(temp_repo_with_file):

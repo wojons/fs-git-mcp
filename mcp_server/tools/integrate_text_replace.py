@@ -26,12 +26,12 @@ def replace_and_commit(repo: RepoRef, path: str, search: str, replace: str, rege
     return sha
 
 
-def batch_replace_and_commit(repo: RepoRef, replacements: list[dict], template: Optional[CommitTemplate] = None) -> list[str]:
+def batch_replace_and_commit(repo: RepoRef, replacements: list[dict], template: Optional[CommitTemplate] = None, summary: str = "batch text replacement") -> list[str]:
     """
     Batch replace and commit per file.
     """
     shas = []
     for rep in replacements:
-        sha = replace_and_commit(repo, rep['path'], rep['search'], rep['replace'], rep.get('regex', False), template)
+        sha = replace_and_commit(repo, rep['path'], rep['search'], rep['replace'], rep.get('regex', False), template, rep.get('summary', summary))
         shas.append(sha)
     return shas

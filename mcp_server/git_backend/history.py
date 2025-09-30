@@ -24,11 +24,14 @@ def read_with_history(repo: RepoRef, path: str, history_limit: int = 10) -> Dict
     """
     Read file content and git history.
     """
+    from .safety import enforce_path_under_root
+    
     # Read content
     try:
-        with open(path, 'r') as f:
+        abs_path = enforce_path_under_root(repo, path)
+        with open(abs_path, 'r') as f:
             content = f.read()
-    except FileNotFoundError:
+    except (FileNotFoundError, ValueError):
         content = None
     
     # Get history
