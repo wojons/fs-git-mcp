@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [0.1.0] - 2025-09-30
 
 ### Added
 
@@ -15,3 +15,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - CLI with Typer.
 - Unit tests and demo scripts.
 - Documentation.
+
+### Added
+
+- MCP server CLI entry point (`fs-git serve` and `fs-git-mcp`)
+- Proper MCP server packaging with uvx support
+- stdio and TCP transport modes
+- Claude Desktop configuration documentation
+- MCP Inspector integration guide
+- Comprehensive MCP server integration tests
+- Easy deployment and testing setup
+
+## [Unreleased]

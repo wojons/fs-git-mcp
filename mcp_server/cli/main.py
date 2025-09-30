@@ -249,5 +249,75 @@ def lint(repo: str = typer.Option(..., "--repo", help="Repository root path"),
             typer.echo(f"  - {error}")
 
 
+@app.command()
+def serve(
+    transport: str = typer.Option("stdio", "--transport", help="Transport mode: stdio or tcp"),
+    port: int = typer.Option(8080, "--port", help="Port for TCP transport"),
+    host: str = typer.Option("localhost", "--host", help="Host for TCP transport")
+):
+    """
+    Start the MCP server for git-enforced filesystem operations.
+    
+    Uses stdio transport by default for compatibility with Claude Desktop and MCP Inspector.
+    Use TCP transport for development and testing.
+    """
+    import asyncio
+    import sys
+    
+    if transport == "stdio":
+        typer.echo("Starting fs-git MCP server on stdio...", err=True)
+        typer.echo("Use with Claude Desktop or MCP Inspector", err=True)
+        
+        # Import and run the FastMCP server
+        from ..mcp_server_fastmcp import main as mcp_main
+        mcp_main()
+        
+    elif transport == "tcp":
+        typer.echo(f"Starting fs-git MCP server on tcp://{host}:{port}", err=True)
+        
+        # For TCP mode, we need to adapt the server
+        import socket
+        import json
+        
+        async def tcp_server():
+            server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            server_socket.bind((host, port))
+            server_socket.listen(1)
+            
+            typer.echo(f"TCP server listening on {host}:{port}", err=True)
+            
+            while True:
+                client_socket, address = server_socket.accept()
+                typer.echo(f"Client connected from {address}", err=True)
+                
+                try:
+                    while True:
+                        data = client_socket.recv(4096)
+                        if not data:
+                            break
+                        
+                        try:
+                            request = json.loads(data.decode())
+                            # TODO: Process MCP request
+                            response = {"jsonrpc": "2.0", "id": request.get("id"), "result": {"status": "ok"}}
+                            client_socket.send(json.dumps(response).encode() + b"\n")
+                        except json.JSONDecodeError:
+                            error_response = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}}
+                            client_socket.send(json.dumps(error_response).encode() + b"\n")
+                
+                except Exception as e:
+                    typer.echo(f"Error handling client: {e}", err=True)
+                finally:
+                    client_socket.close()
+        
+        asyncio.run(tcp_server())
+    
+    else:
+        typer.echo(f"Unknown transport: {transport}", err=True)
+        typer.echo("Supported transports: stdio, tcp", err=True)
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     app()

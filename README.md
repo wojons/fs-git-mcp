@@ -17,6 +17,85 @@ uv venv && uv pip install -e .[dev]
 pre-commit install
 ```
 
+## MCP Server Usage
+
+### Running the MCP Server
+
+The fs-git MCP server can be run in two ways:
+
+**Option 1: Using the CLI command**
+```bash
+# For Claude Desktop and MCP Inspector (stdio transport)
+fs-git serve
+
+# For development/testing (TCP transport)  
+fs-git serve --transport tcp --port 8080
+```
+
+**Option 2: Using the direct MCP server command**
+```bash
+# stdio mode (default, for Claude Desktop)
+fs-git-mcp
+
+# TCP mode for development
+fs-git-mcp --transport tcp --port 8080
+```
+
+**Option 3: Using uvx (no installation required)**
+```bash
+# Run directly without installation
+uvx fs-git-mcp
+
+# Or with the CLI
+uvx --from . fs-git serve
+```
+
+### Claude Desktop Configuration
+
+Add this to your Claude Desktop configuration (`~/.claude/config.json`):
+
+```json
+{
+  "mcpServers": {
+    "fs-git": {
+      "command": "uvx",
+      "args": ["fs-git-mcp"]
+    }
+  }
+}
+```
+
+Or if installed locally:
+```json
+{
+  "mcpServers": {
+    "fs-git": {
+      "command": "fs-git-mcp"
+    }
+  }
+}
+```
+
+### Testing with MCP Inspector
+
+```bash
+# Install MCP Inspector
+npm install -g @modelcontextprotocol/inspector
+
+# Test the server
+npx @modelcontextprotocol/inspector fs-git-mcp
+```
+
+### Available MCP Tools
+
+The MCP server exposes these tool namespaces:
+
+- **git_fs**: `write_and_commit`, `read_with_history`, `start_staged`, `staged_write`, `staged_preview`, `finalize_staged`, `abort_staged`
+- **fs_reader**: `extract`, `answer_about_file` 
+- **fs_text_replace**: `replace_and_commit`
+- **fs_code_diff**: `preview_diff`
+- **fs_io**: `read_file`, `stat_file`, `list_dir`, `make_dir`
+
 ## Quick Start
 
 1. Initialize a repo:
