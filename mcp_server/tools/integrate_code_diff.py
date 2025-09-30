@@ -3,6 +3,7 @@ from typing import Optional
 from ..git_backend.repo import RepoRef
 from ..git_backend.commits import write_and_commit, CommitTemplate
 from ..git_backend.safety import enforce_path_under_root
+from ..git_backend.templates import load_default_template
 
 
 def preview_diff(repo: RepoRef, path: str, modified_content: str, ignore_whitespace: bool = False, context_lines: int = 3) -> str:
@@ -26,10 +27,12 @@ def preview_diff(repo: RepoRef, path: str, modified_content: str, ignore_whitesp
     return '\n'.join(diff)
 
 
-def apply_patch_and_commit(repo: RepoRef, path: str, patch: str, template: Optional[CommitTemplate] = None, staged: bool = False) -> str:
+def apply_patch_and_commit(repo: RepoRef, path: str, patch: str, template: CommitTemplate = None, staged: bool = False, summary: str = "apply patch") -> str:
     """
     Apply patch and commit.
     """
+    from ..git_backend.templates import load_default_template
+    
     abs_path = enforce_path_under_root(repo, path)
     with open(abs_path, 'r') as f:
         content = f.read()
@@ -39,6 +42,8 @@ def apply_patch_and_commit(repo: RepoRef, path: str, patch: str, template: Optio
     # Placeholder for patch application
     new_content = content  # For now, no change
     
-    variables = {'op': 'patch', 'path': path, 'summary': 'apply patch'}
+    variables = {'op': 'patch', 'path': path, 'summary': summary}
+    if template is None:
+        template = load_default_template()
     sha = write_and_commit(repo, abs_path, new_content, template, variables)
     return sha

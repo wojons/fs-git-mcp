@@ -1,3 +1,4 @@
+from typing import Optional
 from pathlib import Path
 from pydantic import BaseModel, Field
 import subprocess
@@ -5,7 +6,7 @@ import os
 
 class RepoRef(BaseModel):
     root: str
-    branch: str = Field(default=None)
+    branch: Optional[str] = Field(default=None)
 
     def __init__(self, **data):
         super().__init__(**data)

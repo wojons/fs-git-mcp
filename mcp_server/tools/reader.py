@@ -3,6 +3,7 @@ import re
 from typing import List, Dict, Any, Optional
 from ..git_backend.repo import RepoRef
 from ..git_backend.history import get_file_history
+from ..git_backend.safety import enforce_path_under_root
 
 
 class ReadIntent(BaseModel):
@@ -27,7 +28,8 @@ def extract_tool(repo: RepoRef, intent: ReadIntent) -> ReadResult:
     """
     Extract spans from file based on query.
     """
-    with open(intent.path, 'r') as f:
+    abs_path = enforce_path_under_root(repo, intent.path)
+    with open(abs_path, 'r') as f:
         lines = f.readlines()
     
     spans = []

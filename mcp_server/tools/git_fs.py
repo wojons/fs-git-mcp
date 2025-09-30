@@ -6,7 +6,7 @@ from ..git_backend.repo import RepoRef
 from ..git_backend.commits import CommitTemplate, lint_commit_message, check_uniqueness, resolve_collision
 from ..git_backend.safety import enforce_path_under_root, check_dirty_tree
 from ..git_backend.history import get_file_history, read_with_history
-from ..git_backend.staging import StagedSession, start_staged_session, get_preview, finalize_session
+from ..git_backend.staging import StagedSession, start_staged_session, get_preview, finalize_session, get_session_by_id, remove_session
 
 class WriteRequest(BaseModel):
     repo: RepoRef
@@ -15,6 +15,11 @@ class WriteRequest(BaseModel):
     template: CommitTemplate
     allow_create: bool = True
     allow_overwrite: bool = True
+    # Variables for template formatting
+    op: str = "write"
+    summary: str = "file write"
+    reason: Optional[str] = None
+    ticket: Optional[str] = None
 
 class WriteResult(BaseModel):
     path: str
@@ -41,7 +46,7 @@ def write_and_commit_tool(request: WriteRequest) -> WriteResult:
     abs_path = enforce_path_under_root(request.repo, request.path)
     if check_dirty_tree(request.repo) and not request.allow_overwrite:
         raise ValueError("Working tree is dirty and allow_overwrite is false")
-    variables = {"op": "write", "path": request.path, "summary": "file write"}
+    variables = {"op": request.op, "path": request.path, "summary": request.summary, "reason": request.reason or "", "ticket": request.ticket or "", "files": "", "refs": ""}
     lint_result = lint_commit_message(request.template, variables)
     if not lint_result["ok"]:
         raise ValueError(f"Commit message lint failed: {lint_result['errors']}")
@@ -80,8 +85,12 @@ def start_staged_tool(repo: RepoRef, ticket: Optional[str] = None, template: Opt
 
 def staged_write_tool(session_id: str, request: WriteRequest) -> WriteResult:
     # For staged, we need to switch to work branch first
+    from ..git_backend.staging import get_session_by_id
     abs_path = enforce_path_under_root(request.repo, request.path)
-    subprocess.run(["git", "-C", request.repo.root, "checkout", "work_branch"], check=True)  # Placeholder
+    session = get_session_by_id(session_id)
+    if not session:
+        raise ValueError(f"Session not found: {session_id}")
+    subprocess.run(["git", "-C", request.repo.root, "checkout", session.work_branch], check=True)
     variables = {"op": "staged", "path": request.path, "summary": "staged write"}
     lint_result = lint_commit_message(request.template, variables)
     if not lint_result["ok"]:
@@ -106,11 +115,29 @@ def staged_write_tool(session_id: str, request: WriteRequest) -> WriteResult:
 
 def staged_preview_tool(session_id: str) -> Preview:
     # Retrieve session and get preview
-    return Preview(diff="", files_changed=[], commits=[])
+    session = get_session_by_id(session_id)
+    if not session:
+        raise ValueError(f"Session not found: {session_id}")
+    
+    preview_data = session.preview()
+    return Preview(
+        diff=preview_data["diff"],
+        files_changed=[],
+        commits=[{"sha": "dummy", "subject": commit} for commit in preview_data["commits"]]
+    )
 
 def finalize_tool(session_id: str, options: FinalizeOptions) -> Dict[str, str]:
-    merged_sha = finalize_session(None, "", "", options.strategy)
-    return {"merged_sha": merged_sha, "base_branch": "main"}
+    session = get_session_by_id(session_id)
+    if not session:
+        raise ValueError(f"Session not found: {session_id}")
+    
+    merged_sha = session.finalize(options.strategy)
+    remove_session(session_id)
+    return {"merged_sha": merged_sha, "base_branch": session.base_branch}
 
 def abort_tool(session_id: str) -> Dict[str, str]:
+    session = get_session_by_id(session_id)
+    if session:
+        session.abort()
+        remove_session(session_id)
     return {"status": "aborted"}

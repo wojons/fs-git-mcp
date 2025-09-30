@@ -10,9 +10,9 @@ import os
 import sys
 import json
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
-def run_command(cmd: List[str], cwd: str = None, capture_output: bool = True, input_text: str = None) -> subprocess.CompletedProcess:
+def run_command(cmd: List[str], cwd: str = None, capture_output: bool = True, input_text: Optional[str] = None) -> subprocess.CompletedProcess:
     """Run a command and return the result."""
     print(f"Running: {' '.join(cmd)}")
     if cwd:
@@ -63,10 +63,9 @@ def test_basic_write(repo_dir: str) -> Dict[str, Any]:
         "fs-git", "write", 
         "--repo", repo_dir,
         "--path", "test.txt",
-        "--file", "-",
         "--op", "add",
         "--summary", "test file creation"
-    ], input="Hello, World!\n")
+    ], input_text="Hello, World!\n")
     
     if result.returncode != 0:
         return {"success": False, "error": str(result)}
@@ -102,8 +101,8 @@ def test_staged_workflow(repo_dir: str) -> Dict[str, Any]:
     if result.returncode != 0:
         return {"success": False, "error": f"Failed to start staged session: {result}"}
     
-    # Extract session ID (this is a simplification - actual CLI might need jq)
-    session_id = "test-session"  # Placeholder
+    # Extract session ID from output
+    session_id = result.stdout.strip().split()[-1]  # Get last word from "Started session <id>"
     
     # Staged write
     result = run_command([
@@ -111,9 +110,8 @@ def test_staged_workflow(repo_dir: str) -> Dict[str, Any]:
         "--session", session_id,
         "--repo", repo_dir,
         "--path", "staged.txt",
-        "--file", "-",
         "--summary", "staged file creation"
-    ], input="Staged content\n")
+    ], input_text="Staged content\n")
     
     if result.returncode != 0:
         return {"success": False, "error": f"Staged write failed: {result}"}
@@ -250,10 +248,9 @@ def test_safety_mechanisms(repo_dir: str) -> Dict[str, Any]:
         "fs-git", "write",
         "--repo", repo_dir,
         "--path", "../outside.txt",
-        "--file", "-",
         "--op", "add",
         "--summary", "path traversal test"
-    ], input="This should fail\n")
+    ], input_text="This should fail\n")
     
     if result.returncode == 0:
         return {"success": False, "error": "Path traversal was not prevented"}
@@ -263,11 +260,10 @@ def test_safety_mechanisms(repo_dir: str) -> Dict[str, Any]:
         "fs-git", "write",
         "--repo", repo_dir,
         "--path", "invalid.txt",
-        "--file", "-",
         "--subject", "Invalid template missing tokens",
         "--op", "add",
         "--summary", "should fail"
-    ], input="This should fail due to invalid template\n")
+    ], input_text="This should fail due to invalid template\n")
     
     if result.returncode == 0:
         return {"success": False, "error": "Invalid template was not rejected"}

@@ -46,15 +46,40 @@ def write_and_commit(repo: RepoRef, path: str, content: str, template: CommitTem
     # Git add
     subprocess.run(['git', '-C', repo.root, 'add', path], check=True)
     
-    # Render message
-    subject = template.subject.format(**variables)
-    body = template.body.format(**variables) if template.body else None
+    # Render message with safe formatting
+    def safe_format(template_str: str, vars_dict: Dict[str, str]) -> str:
+        """Safely format template string with fallback for missing variables."""
+        # First, replace all known optional variables with empty strings if missing
+        safe_vars = vars_dict.copy()
+        optional_vars = ['reason', 'ticket', 'files', 'refs', 'co_authors']
+        for var in optional_vars:
+            if var not in safe_vars:
+                safe_vars[var] = ''
+        
+        # Now try to format
+        try:
+            return template_str.format(**safe_vars)
+        except KeyError as e:
+            # If still missing variables, replace them with empty strings
+            missing_key = str(e).strip("'")
+            safe_vars[missing_key] = ''
+            try:
+                return template_str.format(**safe_vars)
+            except KeyError:
+                # If multiple missing keys, fall back to simple replacement
+                result = template_str
+                for key, value in safe_vars.items():
+                    result = result.replace(f'{{{key}}}', str(value))
+                return result
+    
+    subject = safe_format(template.subject, variables)
+    body = safe_format(template.body, variables) if template.body else None
     message = subject
     if body:
         message += f"\n\n{body}"
     if template.trailers:
         for k, v in template.trailers.items():
-            message += f"\n{k}: {v.format(**variables)}"
+            message += f"\n{k}: {safe_format(v, variables)}"
     
     # Validate
     is_valid, errors = validate_commit_message(subject, body)
@@ -79,6 +104,6 @@ def validate_commit_message(subject: str, body: Optional[str] = None) -> tuple[b
     errors = []
     if len(subject) > 72:
         errors.append("Subject exceeds 72 characters")
-    if '{op}' not in subject or '{path}' not in subject or '{summary}' not in subject:
-        errors.append("Subject must include {op}, {path}, {summary} tokens")
+    # Note: We don't check for {op}, {path}, {summary} tokens here anymore
+    # since they should have been replaced by actual values during formatting
     return len(errors) == 0, errors

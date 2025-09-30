@@ -52,21 +52,88 @@ class StagedSession(BaseModel):
         subprocess.run(["git", "-C", self.repo.root, "checkout", self.base_branch], check=True)
         subprocess.run(["git", "-C", self.repo.root, "branch", "-D", self.work_branch], check=True)
 
+import os
+import json
+from pathlib import Path
+
+# Persistent session storage
+SESSIONS_DIR = Path.home() / ".fs_git_sessions"
+SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+
+def _get_session_file(session_id: str) -> Path:
+    # Replace slashes with underscores to avoid directory creation issues
+    safe_session_id = session_id.replace('/', '_')
+    return SESSIONS_DIR / f"{safe_session_id}.json"
+
+def _save_session(session: StagedSession):
+    session_file = _get_session_file(session.id)
+    session_data = {
+        "id": session.id,
+        "base_branch": session.base_branch,
+        "work_branch": session.work_branch,
+        "started_at": session.started_at,
+        "repo": {
+            "root": session.repo.root,
+            "branch": session.repo.branch
+        }
+    }
+    with open(session_file, 'w') as f:
+        json.dump(session_data, f)
+
+def _load_session(session_id: str) -> Optional[StagedSession]:
+    # Replace slashes with underscores to avoid directory creation issues
+    safe_session_id = session_id.replace('/', '_')
+    session_file = _get_session_file(safe_session_id)
+    if not session_file.exists():
+        return None
+    
+    try:
+        with open(session_file, 'r') as f:
+            session_data = json.load(f)
+        
+        repo = RepoRef(root=session_data["repo"]["root"], branch=session_data["repo"]["branch"] or None)
+        return StagedSession(
+            id=session_data["id"],
+            base_branch=session_data["base_branch"],
+            work_branch=session_data["work_branch"],
+            started_at=session_data["started_at"],
+            repo=repo
+        )
+    except (json.JSONDecodeError, KeyError, ValueError):
+        return None
+
+def _remove_session_file(session_id: str):
+    # Replace slashes with underscores to avoid directory creation issues
+    safe_session_id = session_id.replace('/', '_')
+    session_file = _get_session_file(safe_session_id)
+    if session_file.exists():
+        session_file.unlink()
+
 def start_staged_session(repo: RepoRef, ticket: Optional[str] = None) -> StagedSession:
     base_branch = repo.get_current_branch()
     session_id = f"mcp/{ticket or 'session'}-{str(uuid.uuid4())[:8]}"
     work_branch = f"mcp/staged/{session_id}"
     try:
         subprocess.run(["git", "-C", repo.root, "checkout", "-b", work_branch, base_branch], check=True)
-        return StagedSession(
+        session = StagedSession(
             id=session_id,
             base_branch=base_branch,
             work_branch=work_branch,
             started_at=datetime.utcnow().isoformat(),
             repo=repo
         )
+        _save_session(session)
+        return session
     except subprocess.CalledProcessError as e:
         raise ValueError(f"Failed to create staged session: {e}")
+
+def get_session_by_id(session_id: str) -> Optional[StagedSession]:
+    """Get a session by ID."""
+    return _load_session(session_id)
+
+def remove_session(session_id: str):
+    """Remove a session from active storage."""
+    _remove_session_file(session_id)
 
 def get_preview(repo: RepoRef, work_branch: str, base_branch: str) -> dict:
     try:

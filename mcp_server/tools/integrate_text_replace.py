@@ -5,7 +5,7 @@ from ..git_backend.commits import write_and_commit, CommitTemplate
 from ..git_backend.safety import enforce_path_under_root
 
 
-def replace_and_commit(repo: RepoRef, path: str, search: str, replace: str, regex: bool = False, template: Optional[CommitTemplate] = None) -> str:
+def replace_and_commit(repo: RepoRef, path: str, search: str, replace: str, regex: bool = False, template: Optional[CommitTemplate] = None, summary: str = "text replace") -> str:
     if template is None:
         from ..git_backend.templates import load_default_template
         template = load_default_template()
@@ -21,7 +21,7 @@ def replace_and_commit(repo: RepoRef, path: str, search: str, replace: str, rege
     else:
         new_content = content.replace(search, replace)
     
-    variables = {'op': 'replace', 'path': path, 'summary': 'text replace'}
+    variables = {'op': 'replace', 'path': path, 'summary': summary}
     sha = write_and_commit(repo, abs_path, new_content, template, variables)
     return sha
 
