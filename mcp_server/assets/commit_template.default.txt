@@ -1,0 +1,7 @@
+[{op}] {path} – {summary}
+
+{reason}
+
+{files}
+{refs}
+{co_authors}
