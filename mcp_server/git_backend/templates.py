@@ -3,7 +3,6 @@ from pydantic import BaseModel
 from typing import Optional, Dict
 import re
 import subprocess
-from .commits import CommitTemplate
 
 class CommitTemplate(BaseModel):
     subject: str

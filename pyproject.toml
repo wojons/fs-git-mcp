@@ -9,7 +9,7 @@ dependencies = [
     "typer>=0.9",
     "rich>=13.0",
     "gitpython>=3.1",
-    "dulwich>=0.21; optional",
+    "dulwich>=0.21",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +28,9 @@ fs-git = "mcp_server.cli.main:app"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["mcp_server"]
 
 [tool.ruff]
 line-length = 88

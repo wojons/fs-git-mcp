@@ -4,12 +4,7 @@ import re
 from pathlib import Path
 from typing import Dict, Optional, Any, List, Tuple
 from .repo import RepoRef
-
-class CommitTemplate(BaseModel):
-    subject: str
-    body: Optional[str] = None
-    trailers: Optional[Dict[str, str]] = None
-    enforce_unique_window: int = 100
+from .templates import CommitTemplate
 
 def lint_commit_message(template: CommitTemplate, variables: Dict[str, str]) -> Dict[str, Any]:
     errors = []
