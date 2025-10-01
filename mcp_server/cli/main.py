@@ -77,15 +77,20 @@ def write(repo: str = typer.Option(..., "--repo", help="Repository root path"),
         content = typer.prompt("Content")
     variables = {'op': str(op), 'path': str(path), 'summary': summary, 'reason': str(reason or ''), 'ticket': str(ticket or ''), 'files': '', 'refs': ''}
     
-    # Create path authorizer if path patterns are provided
-    path_authorizer = None
-    if allow_paths or deny_paths:
-        from ..git_backend.safety import create_path_authorizer_from_config
-        path_authorizer = create_path_authorizer_from_config(
-            repo_root=repo,
-            allow_paths=allow_paths,
-            deny_paths=deny_paths
-        )
+    # Always check for path authorization (CLI params take precedence over env vars)
+    from ..git_backend.safety import create_path_authorizer_from_config
+    path_authorizer = create_path_authorizer_from_config(
+        repo_root=repo,
+        allow_paths=allow_paths,
+        deny_paths=deny_paths
+    )
+    
+    # Only show authorization info if patterns are configured (CLI or env vars)
+    has_patterns = (allow_paths or deny_paths or 
+                   path_authorizer.allowed_patterns or path_authorizer.denied_patterns or
+                   path_authorizer.allowed_glob_patterns or path_authorizer.denied_glob_patterns)
+    
+    if has_patterns:
         typer.echo(f"Path authorization enabled: {path_authorizer.get_allowed_paths_summary()}")
         typer.echo(f"Denied paths: {path_authorizer.get_denied_paths_summary()}")
     

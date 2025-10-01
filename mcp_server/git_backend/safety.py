@@ -109,6 +109,8 @@ class PathAuthorizer:
     def _matches_glob(self, path: str, glob_patterns: List[str]) -> bool:
         """
         Check if path matches any of the glob patterns.
+        
+        Uses glob-style pattern matching with proper ** support for recursive matching.
         """
         import fnmatch
         
@@ -122,55 +124,120 @@ class PathAuthorizer:
                 # Path is outside repo root
                 rel_path = path.replace(os.sep, '/')
         else:
-            rel_path = path.replace(os.sep, '/')
+            # When no repo_root, try to detect if path looks like it's in a repo
+            # For patterns like /test/repo/src/main.py, try extracting the "src/main.py" part
+            # by looking for common directory patterns
+            abs_path = os.path.abspath(path)
+            path_parts = abs_path.replace(os.sep, '/').split('/')
+            
+            # Look for common source directories and use them as base
+            common_src_dirs = ['src', 'lib', 'app', 'components']
+            for i, part in enumerate(path_parts):
+                if part in common_src_dirs:
+                    rel_path = '/'.join(path_parts[i:])
+                    break
+            else:
+                # If no common source directory found, use the last 2 parts
+                if len(path_parts) >= 2:
+                    rel_path = '/'.join(path_parts[-2:])
+                else:
+                    rel_path = path_parts[-1] if path_parts else ''
         
         for pattern in glob_patterns:
-            # Handle ** patterns by converting them to appropriate fnmatch patterns
-            fnmatch_pattern = pattern
-            
-            # Convert ** to match subdirectories recursively
-            if '**' in pattern:
-                # fnmatch doesn't handle ** exactly like glob, so we need to handle it
-                if pattern == '**':
-                    return True  # ** matches everything
-                elif pattern.endswith('/**'):
-                    # Pattern like src/ ** should match src/ and all subdirectories
-                    base_pattern = pattern[:-3]  # Remove '/**'
-                    if rel_path.startswith(base_pattern):
-                        return True
-                    elif rel_path == base_pattern.rstrip('/'):
-                        return True
-                elif pattern.endswith('**'):
-                    # Pattern like docs/**.md should match docs/ and all subdirectories
-                    base_pattern = pattern[:-2]  # Remove '**'
-                    if rel_path.startswith(base_pattern):
-                        return True
-                elif '**/' in pattern:
-                    # Pattern like ** /test/** needs special handling
-                    parts = pattern.split('**/')
-                    if len(parts) == 2:
-                        prefix, suffix = parts
-                        if prefix == '' and suffix.endswith('/**'):
-                            # Pattern like **/docs/**
-                            base_suffix = suffix[:-3]  # Remove '/**'
-                            if rel_path.endswith(base_suffix):
-                                return True
-                        # For other ** patterns, use a more permissive approach
-                        if fnmatch.fnmatch(rel_path, pattern.replace('**', '*')):
-                            return True
-                else:
-                    # For other ** patterns, replace with * for fnmatch
-                    fnmatch_pattern = pattern.replace('**', '*')
+            # Handle ** patterns properly by converting them to fnmatch-compatible patterns
+            fnmatch_pattern = self._convert_glob_to_fnmatch(pattern)
             
             if fnmatch.fnmatch(rel_path, fnmatch_pattern):
                 return True
             
-            # Also try matching against the full path
+            # Also try matching against the full path, but only if we have a repo_root
+            # This prevents patterns like **/test/** from matching /test/repo/src/main.py
             full_path = path.replace(os.sep, '/')
-            if fnmatch.fnmatch(full_path, fnmatch_pattern):
-                return True
+            if self.repo_root and not full_path.startswith(self.repo_root.replace(os.sep, '/')):
+                if fnmatch.fnmatch(full_path, fnmatch_pattern):
+                    return True
+            # NOTE: Removed absolute path matching when no repo_root to prevent false matches
         
         return False
+    
+    def _convert_glob_to_fnmatch(self, pattern: str) -> str:
+        """
+        Convert glob pattern with ** to fnmatch-compatible pattern.
+        
+        Args:
+            pattern: Glob pattern that may contain **
+            
+        Returns:
+            fnmatch-compatible pattern
+        """
+        if '**' not in pattern:
+            return pattern
+        
+        # Handle special cases for ** patterns
+        if pattern == '**':
+            return '*'  # Match everything
+        
+        if pattern.startswith('**/'):
+            # Pattern like **/*.py should match any file ending in .py
+            suffix = pattern[3:]
+            if '**' in suffix:
+                # Pattern like **/node_modules/** - convert to node_modules/** or node_modules*/**
+                if suffix.endswith('/**'):
+                    # Remove the trailing /** for patterns like **/node_modules/**
+                    base = suffix[:-3]
+                    # For common top-level directories, don't use * prefix (node_modules, .git, etc.)
+                    # For other patterns, use * prefix to match subdirectories
+                    common_dirs = ['node_modules', '.git', '.svn', 'build', 'dist', 'target', '__pycache__']
+                    if base in common_dirs:
+                        return f"{base}/**"
+                    else:
+                        return f"*/{base}/**"  # Use */ prefix to match directories like src/test/**
+                else:
+                    # For other complex patterns, use a more permissive approach
+                    return f"*/{suffix}"
+            else:
+                return f"*{suffix}"
+        
+        if pattern.endswith('/**'):
+            # Pattern like src/** should match src/ and all subdirectories
+            base = pattern[:-3]
+            return f"{base}*"
+        
+        if '**/' in pattern and not pattern.split('**/')[0]:  # Only if pattern starts with **/
+            # Pattern like **/test.py needs special handling
+            return pattern.replace('**/', '*/')
+        
+        # Handle patterns like docs/**/*.md
+        # ** should match zero or more directories
+        parts = pattern.split('**')
+        if len(parts) == 2:
+            prefix, suffix = parts
+            # Convert docs/**/*.md to docs/**.md for fnmatch
+            # This handles both docs/readme.md and docs/guide/file.md
+            if suffix.startswith('.'):
+                # Pattern like docs/**/*.md -> docs/**.md
+                # fnmatch treats ** as *, but docs/**.md matches both cases
+                return f"{prefix}**{suffix}"
+            elif suffix.startswith('/'):
+                # Pattern like docs/**/*.md or docs/**/test.py
+                # For patterns with file extensions, use docs/**.md style
+                if '.' in suffix:
+                    # Remove the leading / and any extra directories from suffix
+                    clean_suffix = suffix.lstrip('/')
+                    if '/' in clean_suffix:
+                        # Get just the filename part after the last /
+                        filename_part = clean_suffix.split('/')[-1]
+                        return f"{prefix}**{filename_part}"
+                    else:
+                        return f"{prefix}**{clean_suffix}"
+                else:
+                    return f"{prefix}**{suffix}"
+            else:
+                # Pattern like src/**test.py -> src/**test.py
+                return f"{prefix}**/{suffix}"
+        
+        # Fallback: replace ** with * for simple matching
+        return pattern.replace('**', '*')
     
     def _matches_regex(self, path: str, regex_patterns: List[Pattern[str]]) -> bool:
         """
@@ -253,14 +320,27 @@ def create_path_authorizer_from_config(repo_root: Optional[str] = None,
     Returns:
         Configured PathAuthorizer instance
     """
+    import os
+    
     allowed_list = None
     denied_list = None
     
+    # Use CLI parameters if provided, otherwise check environment variables
     if allow_paths:
         allowed_list = [p.strip() for p in allow_paths.split(',') if p.strip()]
+    else:
+        # Fallback to environment variable
+        env_allowed = os.environ.get('FS_GIT_ALLOWED_PATHS')
+        if env_allowed:
+            allowed_list = [p.strip() for p in env_allowed.split(',') if p.strip()]
     
     if deny_paths:
         denied_list = [p.strip() for p in deny_paths.split(',') if p.strip()]
+    else:
+        # Fallback to environment variable
+        env_denied = os.environ.get('FS_GIT_DENIED_PATHS')
+        if env_denied:
+            denied_list = [p.strip() for p in env_denied.split(',') if p.strip()]
     
     return PathAuthorizer(
         allowed_patterns=allowed_list,

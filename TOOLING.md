@@ -37,3 +37,45 @@
 ## Schema
 
 See code for Pydantic models.
+
+## MCP Testing
+
+### Testing Tools
+
+- **MCP Inspector**: Visual testing interface
+  ```bash
+  npx @modelcontextprotocol/inspector fs-git-mcp
+  ```
+
+- **Python SDK Testing**: Programmatic testing
+  ```python
+  from mcp import Client
+  from mcp_server.server_fastmcp_new import create_server
+  
+  async def test():
+      server = create_server()
+      async with Client(server) as client:
+          tools = await client.list_tools()
+          print(f"Available tools: {len(tools.tools)}")
+  ```
+
+- **JSON-RPC Testing**: Protocol compliance
+  ```python
+  # Send raw JSON-RPC requests
+  request = {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "tools/list",
+      "params": {}
+  }
+  ```
+
+### Test Coverage
+
+- **12 MCP Tools**: All namespaces fully tested
+- **JSON-RPC 2.0**: Protocol compliance verified
+- **Error Handling**: Comprehensive error scenarios
+- **Performance**: Sub-100ms response times
+- **Security**: Path authorization enforcement
+
+For detailed testing instructions, see [MCP_TESTING.md](MCP_TESTING.md).

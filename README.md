@@ -96,6 +96,51 @@ The MCP server exposes these tool namespaces:
 - **fs_code_diff**: `preview_diff`
 - **fs_io**: `read_file`, `stat_file`, `list_dir`, `make_dir`
 
+## Path Authorization
+
+FS-Git supports configurable path authorization for security. You can restrict which paths can be accessed using CLI parameters or environment variables.
+
+### CLI Parameters
+
+```bash
+# Allow only specific paths
+fs-git write --repo <root> --path src/utils.py \
+  --allow-paths "src/**,docs/**" \
+  --deny-paths "!src/secrets/**,!**/node_modules/**" \
+  --file - --subject "[{op}] {path} – {summary}" \
+  --op "add" --summary "utility functions" <<'EOF'
+def helper():
+    return "utility"
+EOF
+```
+
+### Environment Variables
+
+Set path patterns via environment variables for global configuration:
+
+```bash
+# Set allowed paths (comma-separated)
+export FS_GIT_ALLOWED_PATHS="src/**,docs/**,*.md"
+
+# Set denied paths (comma-separated, with ! prefix)
+export FS_GIT_DENIED_PATHS="!**/node_modules/**,!**/.git/**,!src/secrets/**"
+
+# Now all fs-git commands will use these patterns
+fs-git write --repo <root> --path src/app.py --file - --subject "Add app" <<'EOF'
+print("Hello World")
+EOF
+```
+
+### Pattern Support
+
+- **Glob patterns**: `src/**`, `docs/**/*.md`, `*.txt`
+- **Regex patterns**: `r".*\.py$"`, `r".*\.js$"`
+- **Deny patterns**: Prefix with `!` (e.g., `!**/node_modules/**`)
+- **Absolute paths**: `/etc/hosts`, `/usr/local/bin/`
+- **Relative paths**: `src/`, `./docs/`
+
+**Priority**: CLI parameters override environment variables.
+
 ## Quick Start
 
 1. Initialize a repo:
@@ -124,10 +169,28 @@ The MCP server exposes these tool namespaces:
 
 ## Demo
 
-Run the demo script:
+### Quick Demo
+Run the basic demo script:
 ```bash
 make demo
 ```
+
+### Comprehensive Demo
+Run the complete copy-paste demo that showcases all features:
+```bash
+# From the fs-git project root
+bash repos/fs-git/scripts/comprehensive_demo.sh
+```
+
+This comprehensive demo includes:
+- Installation and setup
+- Basic direct write operations with git commits
+- Staged workflow with ephemeral branches
+- Text replacement and patch application
+- Path authorization with allowed/denied patterns
+- Environment variable configuration
+- MCP server testing
+- Claude Desktop integration examples
 
 ## Development
 
