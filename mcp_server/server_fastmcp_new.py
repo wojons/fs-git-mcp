@@ -84,7 +84,7 @@ def to_commit_template(template_dict: Optional[Dict[str, Any]], default_subject:
 
 @mcp.tool()
 def write_and_commit(
-    repo: Dict[str, Any],
+    repo: Any,
     path: str,
     content: str,
     template: Optional[Dict[str, Any]] = None,
@@ -96,11 +96,7 @@ def write_and_commit(
     allow_overwrite: bool = True
 ) -> Dict[str, Any]:
     """Write a file and create an atomic git commit with templated message."""
-    root = repo.get("root") or repo.get("path")
-    if root is None:
-        raise ValueError("Repo parameter must contain 'root' or 'path' key")
-    branch = repo.get("branch")
-    repo_ref = RepoRef(root=root, branch=branch)
+    repo_ref = get_repo_ref(repo)
     commit_template = to_commit_template(template)
     
     request = WriteRequest(
@@ -121,47 +117,35 @@ def write_and_commit(
 
 @mcp.tool()
 def read_with_history(
-    repo: Dict[str, Any],
+    repo: Any,
     path: str,
     history_limit: int = 10
 ) -> Dict[str, Any]:
     """Read file content with git history."""
-    root = repo.get("root") or repo.get("path")
-    if root is None:
-        raise ValueError("Repo parameter must contain 'root' or 'path' key")
-    branch = repo.get("branch")
-    repo_ref = RepoRef(root=root, branch=branch)
+    repo_ref = get_repo_ref(repo)
     result = read_with_history_tool(repo_ref, path, history_limit)
     return result
 
 @mcp.tool()
 def start_staged(
-    repo: Dict[str, Any],
+    repo: Any,
     ticket: Optional[str] = None
 ) -> Dict[str, Any]:
     """Start a staged editing session."""
-    root = repo.get("root") or repo.get("path")
-    if root is None:
-        raise ValueError("Repo parameter must contain 'root' or 'path' key")
-    branch = repo.get("branch")
-    repo_ref = RepoRef(root=root, branch=branch)
+    repo_ref = get_repo_ref(repo)
     result = start_staged_tool(repo_ref, ticket)
     return result.model_dump()
 
 @mcp.tool()
 def staged_write(
     session_id: str,
-    repo: Dict[str, Any],
+    repo: Any,
     path: str,
     content: str,
     summary: str = "staged edit"
 ) -> Dict[str, Any]:
     """Write to a staged session."""
-    root = repo.get("root") or repo.get("path")
-    if root is None:
-        raise ValueError("Repo parameter must contain 'root' or 'path' key")
-    branch = repo.get("branch")
-    repo_ref = RepoRef(root=root, branch=branch)
+    repo_ref = get_repo_ref(repo)
     template = load_default_template()
     
     request = WriteRequest(
@@ -204,7 +188,7 @@ def abort_staged(session_id: str) -> Dict[str, Any]:
 
 @mcp.tool()
 def extract(
-    repo: Dict[str, Any],
+    repo: Any,
     path: str,
     query: Optional[str] = None,
     regex: bool = False,
@@ -215,11 +199,7 @@ def extract(
     history_limit: int = 10
 ) -> Dict[str, Any]:
     """Extract relevant spans from a file based on query."""
-    root = repo.get("root") or repo.get("path")
-    if root is None:
-        raise ValueError("Repo parameter must contain 'root' or 'path' key")
-    branch = repo.get("branch")
-    repo_ref = RepoRef(root=root, branch=branch)
+    repo_ref = get_repo_ref(repo)
     read_intent = ReadIntent(
         path=path,
         query=query,
