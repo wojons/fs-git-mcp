@@ -8,33 +8,54 @@ from mcp_server.git_backend.repo import RepoRef
 def glob_to_regex(glob_pattern: str) -> str:
     """
     Convert glob pattern to regex pattern.
-    Supports basic glob features including **, *, ?, and character classes.
+    Supports ** (recursive), * (non-recursive), ? , and basic escaping.
     """
-    # Escape special regex chars that are literal in glob
     i = 0
-    regex_parts = ['^']
-    while i < len(glob_pattern):
+    parts = []
+    n = len(glob_pattern)
+    while i < n:
         c = glob_pattern[i]
-        if c == '*':
-            if i + 1 < len(glob_pattern) and glob_pattern[i + 1] == '*':
-                # ** matches any sequence including /
-                regex_parts.append('.*')
+        if c == '\\':
+            # Escape next char
+            i += 1
+            if i < n:
+                parts.append(re.escape(glob_pattern[i]))
+            else:
+                parts.append(re.escape(c))
+        elif c == '*':
+            if i + 1 < n and glob_pattern[i + 1] == '*':
+                # ** matches any path segment including /
+                parts.append('.*')
                 i += 2
             else:
-                # * matches any non / chars
-                regex_parts.append('[^/]*')
+                # * matches within segment, no /
+                parts.append('[^/]*')
                 i += 1
         elif c == '?':
-            regex_parts.append('[^/]')
+            parts.append('.')
             i += 1
-        elif c in '.^$+?()[]{}|\\':
-            regex_parts.append(re.escape(c))
+        elif c == '[':
+            # Handle character class
+            j = i
+            while j < n and glob_pattern[j] != ']':
+                j += 1
+            if j < n:
+                class_str = glob_pattern[i:j+1]
+                # Escape special in class
+                escaped = ''.join(re.escape(ch) if ch in '^-[\\]' else ch for ch in class_str)
+                parts.append(escaped)
+                i = j + 1
+            else:
+                parts.append(re.escape(c))
+                i += 1
+        elif c in '.^$+?()|{}':
+            parts.append(re.escape(c))
             i += 1
         else:
-            regex_parts.append(re.escape(c))
+            parts.append(re.escape(c))
             i += 1
-    regex_parts.append('$')
-    return ''.join(regex_parts)
+    regex = '^' + ''.join(parts) + '$'
+    return regex
 
 def enforce_path_under_root(repo: RepoRef, path: str) -> str:
     abs_path = os.path.abspath(os.path.join(repo.root, path))
@@ -106,9 +127,11 @@ class PathAuthorizer:
         
         # Process allowed patterns
         for pattern in allowed_patterns or []:
-            if pattern.startswith('r"') or pattern.startswith("r'"):
-                # Extract and compile regex
-                raw_pattern = pattern[2:-1] if pattern.endswith(('"', "'")) else pattern[1:]
+            if pattern.startswith('r"') or pattern.startswith("r'") or '\\' in pattern:
+                if pattern.startswith('r"') or pattern.startswith("r'"):
+                    raw_pattern = pattern[2:-1] if pattern.endswith(('"', "'")) else pattern[1:]
+                else:
+                    raw_pattern = pattern
                 self.allowed_regexes.append(re.compile(raw_pattern))
             else:
                 # Convert glob to regex
@@ -118,8 +141,11 @@ class PathAuthorizer:
         # Process denied patterns
         for pattern in denied_patterns or []:
             clean_pattern = pattern.lstrip('!')
-            if clean_pattern.startswith('r"') or clean_pattern.startswith("r'"):
-                raw_pattern = clean_pattern[2:-1] if clean_pattern.endswith(('"', "'")) else clean_pattern[1:]
+            if clean_pattern.startswith('r"') or clean_pattern.startswith("r'") or '\\' in clean_pattern:
+                if clean_pattern.startswith('r"') or clean_pattern.startswith("r'"):
+                    raw_pattern = clean_pattern[2:-1] if clean_pattern.endswith(('"', "'")) else clean_pattern[1:]
+                else:
+                    raw_pattern = clean_pattern
                 self.denied_regexes.append(re.compile(raw_pattern))
             else:
                 # Convert glob to regex
@@ -131,7 +157,7 @@ class PathAuthorizer:
         Check if rel_path matches any regex pattern.
         """
         for pattern in regex_patterns:
-            if pattern.match(rel_path):
+            if pattern.fullmatch(rel_path):
                 return True
         return False
     

@@ -468,61 +468,18 @@ def serve(
         typer.echo("Use with Claude Desktop or MCP Inspector", err=True)
 
         # For stdio transport, run directly in this process
-        from mcp_server.server_fastmcp_new import mcp
-
-        mcp.run(transport="stdio")
+        from mcp_server.server_fastmcp_new import main as mcp_main
+        mcp_main()
 
     elif transport == "tcp":
         typer.echo(f"Starting fs-git MCP server on tcp://{host}:{port}", err=True)
 
-        # For TCP mode, we need to adapt the server
-        import socket
-        import json
-        import asyncio
-
-        async def tcp_server():
-            server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            server_socket.bind((host, port))
-            server_socket.listen(1)
-
-            typer.echo(f"TCP server listening on {host}:{port}", err=True)
-
-            while True:
-                client_socket, address = server_socket.accept()
-                typer.echo(f"Client connected from {address}", err=True)
-
-                try:
-                    while True:
-                        data = client_socket.recv(4096)
-                        if not data:
-                            break
-
-                        try:
-                            request = json.loads(data.decode())
-                            # TODO: Process MCP request
-                            response = {
-                                "jsonrpc": "2.0",
-                                "id": request.get("id"),
-                                "result": {"status": "ok"},
-                            }
-                            client_socket.send(json.dumps(response).encode() + b"\n")
-                        except json.JSONDecodeError:
-                            error_response = {
-                                "jsonrpc": "2.0",
-                                "id": None,
-                                "error": {"code": -32700, "message": "Parse error"},
-                            }
-                            client_socket.send(
-                                json.dumps(error_response).encode() + b"\n"
-                            )
-
-                except Exception as e:
-                    typer.echo(f"Error handling client: {e}", err=True)
-                finally:
-                    client_socket.close()
-
-        asyncio.run(tcp_server())
+        # For TCP mode, run the server on TCP
+        from mcp_server.server_fastmcp_new import main as mcp_main
+        # Note: FastMCP supports TCP via --transport tcp --host host --port port
+        # But for simplicity, call with args
+        import subprocess
+        subprocess.run([sys.executable, "-m", "mcp_server.server_fastmcp_new", "--transport", "tcp", "--host", host, "--port", str(port)])
 
     else:
         typer.echo(f"Unknown transport: {transport}", err=True)

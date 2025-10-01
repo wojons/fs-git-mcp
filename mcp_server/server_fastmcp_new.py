@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 
 # Ensure package root is in sys.path for imports when run as script
-package_root = Path(__file__).parent.parent
+package_root = Path(__file__).parent.parent.parent
 if package_root not in sys.path:
     sys.path.insert(0, str(package_root))
 
@@ -55,11 +55,13 @@ from mcp_server.git_backend.templates import CommitTemplate, load_default_templa
 from mcp_server.git_backend.commits import lint_commit_message as lint_commit_msg
 
 def get_repo_ref(repo: Any) -> RepoRef:
-    """Get RepoRef from repo parameter, handling both dict and RepoRef."""
+    """Get RepoRef from repo parameter, handling string, dict, or RepoRef."""
     if isinstance(repo, RepoRef):
         return repo
+    if isinstance(repo, str):
+        return RepoRef(root=repo)
     if not isinstance(repo, dict):
-        raise ValueError("Repo parameter must be dict or RepoRef")
+        raise ValueError("Repo parameter must be string, dict, or RepoRef")
     root = repo.get("root") or repo.get("path")
     if root is None:
         raise ValueError("Repo parameter must contain 'root' or 'path' key")

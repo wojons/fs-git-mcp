@@ -13,20 +13,24 @@ from pathlib import Path
 import pytest
 
 @pytest.mark.asyncio
-async def test_mcp_server():
+def test_mcp_server():
     """Test MCP server with stdio transport."""
     print("🧪 Testing MCP Server...")
     
     # Start the MCP server process
-    process = await asyncio.create_subprocess_exec(
-        sys.executable, "standalone_fastmcp_server.py",
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
+    process = subprocess.Popen(
+        [sys.executable, "standalone_fastmcp_server.py"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+        universal_newlines=True
     )
     
-    if not process.stdin or not process.stdout:
+    if process.stdin is None or process.stdout is None:
         print("❌ Failed to start MCP server process")
+        process.terminate()
         return False
     
     try:
@@ -48,13 +52,13 @@ async def test_mcp_server():
         }
         
         print("📤 Sending initialize request...")
-        process.stdin.write((json.dumps(init_request) + "\n").encode())
-        await process.stdin.drain()
+        process.stdin.write(json.dumps(init_request) + "\n")
+        process.stdin.flush()
         
         # Read response
-        response_line = await process.stdout.readline()
+        response_line = process.stdout.readline()
         if response_line:
-            response = json.loads(response_line.decode().strip())
+            response = json.loads(response_line.strip())
             print(f"📥 Initialize response: {json.dumps(response, indent=2)}")
             
             if response.get("result") and response["result"].get("serverInfo"):
@@ -73,13 +77,13 @@ async def test_mcp_server():
         }
         
         print("\n📤 Sending tools/list request...")
-        process.stdin.write((json.dumps(tools_request) + "\n").encode())
-        await process.stdin.drain()
+        process.stdin.write(json.dumps(tools_request) + "\n")
+        process.stdin.flush()
         
         # Read tools response
-        tools_response_line = await process.stdout.readline()
+        tools_response_line = process.stdout.readline()
         if tools_response_line:
-            tools_response = json.loads(tools_response_line.decode().strip())
+            tools_response = json.loads(tools_response_line.strip())
             tools = tools_response.get("result", {}).get("tools", [])
             print(f"📥 Available tools: {len(tools)} tools found")
             
@@ -99,16 +103,17 @@ async def test_mcp_server():
     finally:
         # Clean shutdown
         try:
+            process.stdin.close()
             process.terminate()
-            await process.wait()
+            process.wait(timeout=5)
         except:
             pass
 
-async def main():
+def main():
     """Run all tests."""
     print("🚀 Starting MCP Server Tests\n")
     
-    success = await test_mcp_server()
+    success = test_mcp_server()
     
     if success:
         print("\n🎉 All tests passed! MCP server is working correctly.")
@@ -118,4 +123,4 @@ async def main():
         sys.exit(1)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
