@@ -34,19 +34,18 @@ from mcp_server.tools.git_fs import (
 )
 from mcp_server.tools.reader import (
     extract_tool,
-    answer_about_file_tool,
     ReadIntent,
 )
 from mcp_server.tools.integrate_text_replace import (
-    replace_and_commit,
+    replace_and_commit as _replace_and_commit,
     batch_replace_and_commit,
 )
 from mcp_server.tools.integrate_code_diff import (
-    preview_diff,
+    preview_diff as _preview_diff,
     apply_patch_and_commit,
 )
 from mcp_server.tools.integrate_file_system import (
-    read_file,
+    read_file as _read_file,
     stat_file,
     list_dir,
     make_dir,
@@ -54,6 +53,18 @@ from mcp_server.tools.integrate_file_system import (
 from mcp_server.git_backend.repo import RepoRef
 from mcp_server.git_backend.templates import CommitTemplate, load_default_template
 from mcp_server.git_backend.commits import lint_commit_message as lint_commit_msg
+
+def get_repo_ref(repo: Any) -> RepoRef:
+    """Get RepoRef from repo parameter, handling both dict and RepoRef."""
+    if isinstance(repo, RepoRef):
+        return repo
+    if not isinstance(repo, dict):
+        raise ValueError("Repo parameter must be dict or RepoRef")
+    root = repo.get("root") or repo.get("path")
+    if root is None:
+        raise ValueError("Repo parameter must contain 'root' or 'path' key")
+    branch = repo.get("branch")
+    return RepoRef(root=root, branch=branch)
 
 # Create FastMCP server
 mcp = FastMCP("fs-git")
@@ -225,32 +236,50 @@ def extract(
 
 @mcp.tool()
 def answer_about_file(
-    repo: Dict[str, Any],
+    repo: Any,
     path: str,
     question: str,
     before: int = 3,
     after: int = 3,
     max_spans: int = 20
 ) -> Dict[str, Any]:
-    """Answer questions about a file's content."""
-    root = repo.get("root") or repo.get("path")
-    if root is None:
-        raise ValueError("Repo parameter must contain 'root' or 'path' key")
-    branch = repo.get("branch")
-    repo_ref = RepoRef(root=root, branch=branch)
-    result = answer_about_file_tool(
-        repo_ref,
-        path,
-        question,
-        before,
-        after,
-        max_spans
-    )
-    return result
+    """Answer questions about a file's content using keyword-based extraction."""
+    repo_ref = get_repo_ref(repo)
+    
+    # Read the file content
+    content = _read_file(repo_ref, path)
+    if not content:
+        return {"answer": "The file is empty or could not be read."}
+    
+    # Extract keywords from question (simple: words longer than 2 chars, lowercase)
+    keywords = [word.lower() for word in question.split() if len(word) > 2 and word.isalpha()]
+    if not keywords:
+        return {"answer": "No clear keywords found in the question."}
+    
+    # Split content into lines
+    lines = content.splitlines()
+    spans = []
+    
+    for i, line in enumerate(lines):
+        if any(keyword in line.lower() for keyword in keywords):
+            # Extract context: before and after lines
+            start = max(0, i - before)
+            end = min(len(lines), i + after + 1)
+            span_lines = lines[start:end]
+            span = '\n'.join(span_lines)
+            spans.append(f"Lines {start+1}-{end}:\\n{span}")
+    
+    if spans:
+        relevant_content = '\\n\\n---\\n\\n'.join(spans[:max_spans])
+        answer = f"Based on keywords from the question ('{' '.join(keywords)}'), here are relevant excerpts from the file:\\n\\n{relevant_content}"
+    else:
+        answer = f"No lines containing keywords ('{' '.join(keywords)}') were found in the file."
+    
+    return {"answer": answer}
 
 @mcp.tool()
 def replace_and_commit(
-    repo: Dict[str, Any],
+    repo: Any,
     path: str,
     search: str,
     replace: str,
@@ -259,14 +288,10 @@ def replace_and_commit(
     summary: str = "text replacement"
 ) -> Dict[str, Any]:
     """Replace text in file and commit."""
-    root = repo.get("root") or repo.get("path")
-    if root is None:
-        raise ValueError("Repo parameter must contain 'root' or 'path' key")
-    branch = repo.get("branch")
-    repo_ref = RepoRef(root=root, branch=branch)
+    repo_ref = get_repo_ref(repo)
     commit_template = to_commit_template(template)
     
-    result = replace_and_commit(
+    result = _replace_and_commit(
         repo_ref,
         path,
         search,
@@ -279,19 +304,15 @@ def replace_and_commit(
 
 @mcp.tool()
 def preview_diff(
-    repo: Dict[str, Any],
+    repo: Any,
     path: str,
     modified_content: str,
     ignore_whitespace: bool = False,
     context_lines: int = 3
 ) -> Dict[str, Any]:
     """Preview diff between original and modified content."""
-    root = repo.get("root") or repo.get("path")
-    if root is None:
-        raise ValueError("Repo parameter must contain 'root' or 'path' key")
-    branch = repo.get("branch")
-    repo_ref = RepoRef(root=root, branch=branch)
-    result = preview_diff(
+    repo_ref = get_repo_ref(repo)
+    result = _preview_diff(
         repo_ref,
         path,
         modified_content,
@@ -302,16 +323,12 @@ def preview_diff(
 
 @mcp.tool()
 def read_file(
-    repo: Dict[str, Any],
+    repo: Any,
     path: str
 ) -> Dict[str, Any]:
     """Read file from repository."""
-    root = repo.get("root") or repo.get("path")
-    if root is None:
-        raise ValueError("Repo parameter must contain 'root' or 'path' key")
-    branch = repo.get("branch")
-    repo_ref = RepoRef(root=root, branch=branch)
-    result = read_file(repo_ref, path)
+    repo_ref = get_repo_ref(repo)
+    result = _read_file(repo_ref, path)
     return {"content": result}
 
 def main():
