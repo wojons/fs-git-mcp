@@ -17,6 +17,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
+    "pytest-asyncio>=0.21",
     "hypothesis>=6.0",
     "ruff>=0.1",
     "black>=23.0",
@@ -26,7 +27,7 @@ dev = [
 
 [project.scripts]
 fs-git = "mcp_server.cli.main:app"
-fs-git-mcp = "mcp_server.server_fastmcp_new:main"
+fs-git-mcp = "mcp_server.cli.main:app"
 
 [build-system]
 requires = ["hatchling"]

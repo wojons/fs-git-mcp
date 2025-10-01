@@ -352,12 +352,12 @@ def serve(
     port: int = typer.Option(8080, "--port", help="Port for TCP transport"),
     host: str = typer.Option("localhost", "--host", help="Host for TCP transport")
 ):
-    '''
+    """
     Start the MCP server for git-enforced filesystem operations.
     
     Uses stdio transport by default for compatibility with Claude Desktop and MCP Inspector.
     Use TCP transport for development and testing.
-    '''
+    """
     # Fix for Typer option parsing issue - ensure transport is string
     if not isinstance(transport, str):
         transport = "stdio"
