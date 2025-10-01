@@ -2,10 +2,10 @@ import sys
 import typer
 from pathlib import Path
 from typing import Optional
-from ..git_backend.repo import RepoRef
-from ..git_backend.templates import load_default_template, CommitTemplate
-from ..tools.git_fs import write_and_commit_tool, read_with_history_tool, start_staged_tool, staged_write_tool, staged_preview_tool, finalize_tool, abort_tool, lint_commit_message, WriteRequest, FinalizeOptions
-from ..tools.reader import extract_tool, answer_about_file_tool, ReadIntent
+from mcp_server.git_backend.repo import RepoRef
+from mcp_server.git_backend.templates import load_default_template, CommitTemplate
+from mcp_server.tools.git_fs import write_and_commit_tool, read_with_history_tool, start_staged_tool, staged_write_tool, staged_preview_tool, finalize_tool, abort_tool, lint_commit_message, WriteRequest, FinalizeOptions
+from mcp_server.tools.reader import extract_tool, answer_about_file_tool, ReadIntent
 
 app = typer.Typer()
 
@@ -78,7 +78,7 @@ def write(repo: str = typer.Option(..., "--repo", help="Repository root path"),
     variables = {'op': str(op), 'path': str(path), 'summary': summary, 'reason': str(reason or ''), 'ticket': str(ticket or ''), 'files': '', 'refs': ''}
     
     # Always check for path authorization (CLI params take precedence over env vars)
-    from ..git_backend.safety import create_path_authorizer_from_config
+    from mcp_server.git_backend.safety import create_path_authorizer_from_config
     path_authorizer = create_path_authorizer_from_config(
         repo_root=repo,
         allow_paths=allow_paths,
@@ -148,7 +148,7 @@ def staged_write(session_id: str = typer.Option(..., "--session", help="Session 
     # Create path authorizer if path patterns are provided
     path_authorizer = None
     if allow_paths or deny_paths:
-        from ..git_backend.safety import create_path_authorizer_from_config
+        from mcp_server.git_backend.safety import create_path_authorizer_from_config
         path_authorizer = create_path_authorizer_from_config(
             repo_root=repo,
             allow_paths=allow_paths,
@@ -248,8 +248,8 @@ def replace(repo: str = typer.Option(..., "--repo", help="Repository root path")
     """
     Replace text in file and optionally commit.
     """
-    from ..tools.integrate_text_replace import replace_and_commit
-    from ..git_backend.safety import create_path_authorizer_from_config, enforce_path_authorization
+    from mcp_server.tools.integrate_text_replace import replace_and_commit
+    from mcp_server.git_backend.safety import create_path_authorizer_from_config, enforce_path_authorization
     repo_ref = RepoRef(root=repo)
     template = load_default_template()
     
@@ -288,8 +288,8 @@ def patch(repo: str = typer.Option(..., "--repo", help="Repository root path"),
     """
     Apply patch to file and commit.
     """
-    from ..tools.integrate_code_diff import apply_patch_and_commit
-    from ..git_backend.safety import create_path_authorizer_from_config, enforce_path_authorization
+    from mcp_server.tools.integrate_code_diff import apply_patch_and_commit
+    from mcp_server.git_backend.safety import create_path_authorizer_from_config, enforce_path_authorization
     repo_ref = RepoRef(root=repo)
     template = load_default_template()
     
@@ -332,7 +332,7 @@ def lint(repo: str = typer.Option(..., "--repo", help="Repository root path"),
     """
     Lint a commit message template.
     """
-    from ..git_backend.templates import CommitTemplate
+    from mcp_server.git_backend.templates import CommitTemplate
     repo_ref = RepoRef(root=repo)
     template = CommitTemplate(subject=subject)
     variables = {'op': op, 'path': path, 'summary': summary}
@@ -352,15 +352,18 @@ def serve(
     port: int = typer.Option(8080, "--port", help="Port for TCP transport"),
     host: str = typer.Option("localhost", "--host", help="Host for TCP transport")
 ):
+    # Fix for Typer option parsing issue
+    if not isinstance(transport, str):
+        transport = "stdio"
+    elif transport is None:
+        transport = "stdio"
+    
     """
     Start the MCP server for git-enforced filesystem operations.
     
     Uses stdio transport by default for compatibility with Claude Desktop and MCP Inspector.
     Use TCP transport for development and testing.
     """
-    import asyncio
-    import sys
-    
     if transport == "stdio":
         typer.echo("Starting fs-git MCP server on stdio...", err=True)
         typer.echo("Use with Claude Desktop or MCP Inspector", err=True)
@@ -389,6 +392,7 @@ def serve(
         # For TCP mode, we need to adapt the server
         import socket
         import json
+        import asyncio
         
         async def tcp_server():
             server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
