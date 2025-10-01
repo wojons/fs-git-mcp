@@ -1,9 +1,10 @@
 import os
 import re
 import subprocess
+import fnmatch
 from pathlib import Path
 from typing import List, Optional, Pattern, Set
-from .repo import RepoRef
+from mcp_server.git_backend.repo import RepoRef
 
 def enforce_path_under_root(repo: RepoRef, path: str) -> str:
     abs_path = os.path.abspath(os.path.join(repo.root, path))
@@ -103,141 +104,63 @@ class PathAuthorizer:
             return False
         
         # Patterns with regex-specific syntax
-        regex_indicators = ['[', ']', '(', ')', '{', '}', '^', '$', '+']
+        regex_indicators = ['(', ')', '{', '}', '^', '$', '+']
         return any(indicator in pattern for indicator in regex_indicators)
     
     def _matches_glob(self, path: str, glob_patterns: List[str]) -> bool:
         """
         Check if path matches any of the glob patterns.
         
-        Uses glob-style pattern matching with proper ** support for recursive matching.
+        Uses custom recursive glob matching with ** support.
+        Assumes path is the relative path string.
         """
-        import fnmatch
+        path_parts = [part for part in path.split('/') if part]
         
-        # Get relative path from repo root
-        if self.repo_root:
-            try:
-                rel_path = os.path.relpath(path, self.repo_root)
-                # Use forward slashes for glob matching consistency
-                rel_path = rel_path.replace(os.sep, '/')
-            except ValueError:
-                # Path is outside repo root
-                rel_path = path.replace(os.sep, '/')
-        else:
-            # When no repo_root, try to detect if path looks like it's in a repo
-            # For patterns like /test/repo/src/main.py, try extracting the "src/main.py" part
-            # by looking for common directory patterns
-            abs_path = os.path.abspath(path)
-            path_parts = abs_path.replace(os.sep, '/').split('/')
-            
-            # Look for common source directories and use them as base
-            common_src_dirs = ['src', 'lib', 'app', 'components']
-            for i, part in enumerate(path_parts):
-                if part in common_src_dirs:
-                    rel_path = '/'.join(path_parts[i:])
-                    break
-            else:
-                # If no common source directory found, use the last 2 parts
-                if len(path_parts) >= 2:
-                    rel_path = '/'.join(path_parts[-2:])
-                else:
-                    rel_path = path_parts[-1] if path_parts else ''
-        
-        for pattern in glob_patterns:
-            # Handle ** patterns properly by converting them to fnmatch-compatible patterns
-            fnmatch_pattern = self._convert_glob_to_fnmatch(pattern)
-            
-            if fnmatch.fnmatch(rel_path, fnmatch_pattern):
+        for pattern_str in glob_patterns:
+            pattern = pattern_str.replace(os.sep, '/')
+            pattern_parts = [part for part in pattern.split('/') if part]
+            if self._matches_pattern_parts(path_parts, pattern_parts):
                 return True
-            
-            # Also try matching against the full path, but only if we have a repo_root
-            # This prevents patterns like **/test/** from matching /test/repo/src/main.py
-            full_path = path.replace(os.sep, '/')
-            if self.repo_root and not full_path.startswith(self.repo_root.replace(os.sep, '/')):
-                if fnmatch.fnmatch(full_path, fnmatch_pattern):
-                    return True
-            # NOTE: Removed absolute path matching when no repo_root to prevent false matches
         
         return False
     
-    def _convert_glob_to_fnmatch(self, pattern: str) -> str:
+    def _matches_pattern_parts(self, path_parts: List[str], pattern_parts: List[str]) -> bool:
         """
-        Convert glob pattern with ** to fnmatch-compatible pattern.
+        Check if path_parts match pattern_parts using recursive glob matching.
+        """
+        if not pattern_parts:
+            return len(path_parts) == 0
         
-        Args:
-            pattern: Glob pattern that may contain **
+        # Special case for single-part non-** patterns: match against basename
+        if len(pattern_parts) == 1 and pattern_parts[0] != '**':
+            if not path_parts:
+                return False
+            return fnmatch.fnmatch(path_parts[-1], pattern_parts[0])
+        
+        # Full recursive matching for multi-part or ** patterns
+        def _match(i: int, j: int) -> bool:
+            if j == len(pattern_parts):
+                return i == len(path_parts)
             
-        Returns:
-            fnmatch-compatible pattern
-        """
-        if '**' not in pattern:
-            return pattern
-        
-        # Handle special cases for ** patterns
-        if pattern == '**':
-            return '*'  # Match everything
-        
-        if pattern.startswith('**/'):
-            # Pattern like **/*.py should match any file ending in .py
-            suffix = pattern[3:]
-            if '**' in suffix:
-                # Pattern like **/node_modules/** - convert to node_modules/** or node_modules*/**
-                if suffix.endswith('/**'):
-                    # Remove the trailing /** for patterns like **/node_modules/**
-                    base = suffix[:-3]
-                    # For common top-level directories, don't use * prefix (node_modules, .git, etc.)
-                    # For other patterns, use * prefix to match subdirectories
-                    common_dirs = ['node_modules', '.git', '.svn', 'build', 'dist', 'target', '__pycache__']
-                    if base in common_dirs:
-                        return f"{base}/**"
-                    else:
-                        return f"*/{base}/**"  # Use */ prefix to match directories like src/test/**
-                else:
-                    # For other complex patterns, use a more permissive approach
-                    return f"*/{suffix}"
+            if i == len(path_parts):
+                # Remaining patterns must all be **
+                return all(p == '**' for p in pattern_parts[j:])
+            
+            pat = pattern_parts[j]
+            
+            if pat == '**':
+                # Match zero directories
+                if _match(i, j + 1):
+                    return True
+                # Match one or more directories (stay at j, advance i)
+                return _match(i + 1, j)
             else:
-                return f"*{suffix}"
+                # Match current segment
+                if fnmatch.fnmatch(path_parts[i], pat):
+                    return _match(i + 1, j + 1)
+                return False
         
-        if pattern.endswith('/**'):
-            # Pattern like src/** should match src/ and all subdirectories
-            base = pattern[:-3]
-            return f"{base}*"
-        
-        if '**/' in pattern and not pattern.split('**/')[0]:  # Only if pattern starts with **/
-            # Pattern like **/test.py needs special handling
-            return pattern.replace('**/', '*/')
-        
-        # Handle patterns like docs/**/*.md
-        # ** should match zero or more directories
-        parts = pattern.split('**')
-        if len(parts) == 2:
-            prefix, suffix = parts
-            # Convert docs/**/*.md to docs/**.md for fnmatch
-            # This handles both docs/readme.md and docs/guide/file.md
-            if suffix.startswith('.'):
-                # Pattern like docs/**/*.md -> docs/**.md
-                # fnmatch treats ** as *, but docs/**.md matches both cases
-                return f"{prefix}**{suffix}"
-            elif suffix.startswith('/'):
-                # Pattern like docs/**/*.md or docs/**/test.py
-                # For patterns with file extensions, use docs/**.md style
-                if '.' in suffix:
-                    # Remove the leading / and any extra directories from suffix
-                    clean_suffix = suffix.lstrip('/')
-                    if '/' in clean_suffix:
-                        # Get just the filename part after the last /
-                        filename_part = clean_suffix.split('/')[-1]
-                        return f"{prefix}**{filename_part}"
-                    else:
-                        return f"{prefix}**{clean_suffix}"
-                else:
-                    return f"{prefix}**{suffix}"
-            else:
-                # Pattern like src/**test.py -> src/**test.py
-                return f"{prefix}**/{suffix}"
-        
-        # Fallback: replace ** with * for simple matching
-        return pattern.replace('**', '*')
+        return _match(0, 0)
     
     def _matches_regex(self, path: str, regex_patterns: List[Pattern[str]]) -> bool:
         """
@@ -251,24 +174,34 @@ class PathAuthorizer:
     def is_path_allowed(self, path: str) -> bool:
         """
         Check if a path is allowed based on the configured patterns.
-        
         Args:
             path: File path to check (absolute or relative to repo_root)
             
         Returns:
             True if path is allowed, False otherwise
         """
-        # Convert to absolute path if repo_root is provided
+        # Calculate absolute path
         if self.repo_root and not os.path.isabs(path):
             abs_path = os.path.abspath(os.path.join(self.repo_root, path))
         else:
-            abs_path = os.path.abspath(path)
+            abs_path = os.path.abspath(path) if os.path.isabs(path) else path
+        
+        # Calculate relative path for consistent matching
+        if self.repo_root:
+            try:
+                rel_path = os.path.relpath(abs_path, self.repo_root).replace(os.sep, '/')
+                if rel_path.startswith('..'):
+                    return False
+            except ValueError:
+                return False
+        else:
+            rel_path = path.replace(os.sep, '/').lstrip('/')
         
         # Check denied patterns first (deny takes precedence)
         if self.denied_patterns or self.denied_glob_patterns:
-            if self._matches_regex(abs_path, self.denied_patterns):
+            if self._matches_regex(rel_path, self.denied_patterns):
                 return False
-            if self._matches_glob(abs_path, self.denied_glob_patterns):
+            if self._matches_glob(rel_path, self.denied_glob_patterns):
                 return False
         
         # If no allowed patterns specified, allow everything (except denied)
@@ -277,9 +210,9 @@ class PathAuthorizer:
         
         # Check allowed patterns
         if self.allowed_patterns or self.allowed_glob_patterns:
-            if self._matches_regex(abs_path, self.allowed_patterns):
+            if self._matches_regex(rel_path, self.allowed_patterns):
                 return True
-            if self._matches_glob(abs_path, self.allowed_glob_patterns):
+            if self._matches_glob(rel_path, self.allowed_glob_patterns):
                 return True
             return False  # Not in allowed patterns
         

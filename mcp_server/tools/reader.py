@@ -1,9 +1,9 @@
 from pydantic import BaseModel
 import re
 from typing import List, Dict, Any, Optional
-from ..git_backend.repo import RepoRef
-from ..git_backend.history import get_file_history
-from ..git_backend.safety import enforce_path_under_root
+from mcp_server.git_backend.repo import RepoRef
+from mcp_server.git_backend.history import get_file_history
+from mcp_server.git_backend.safety import enforce_path_under_root
 
 
 class ReadIntent(BaseModel):

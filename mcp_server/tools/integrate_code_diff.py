@@ -1,9 +1,9 @@
 import difflib
 from typing import Optional
-from ..git_backend.repo import RepoRef
-from ..git_backend.commits import write_and_commit, CommitTemplate
-from ..git_backend.safety import enforce_path_under_root
-from ..git_backend.templates import load_default_template
+from mcp_server.git_backend.repo import RepoRef
+from mcp_server.git_backend.commits import write_and_commit, CommitTemplate
+from mcp_server.git_backend.safety import enforce_path_under_root
+from mcp_server.git_backend.templates import load_default_template
 
 
 def preview_diff(repo: RepoRef, path: str, modified_content: str, ignore_whitespace: bool = False, context_lines: int = 3) -> str:
@@ -31,7 +31,7 @@ def apply_patch_and_commit(repo: RepoRef, path: str, patch: str, template: Optio
     """
     Apply patch and commit.
     """
-    from ..git_backend.templates import load_default_template
+    from mcp_server.git_backend.templates import load_default_template
     
     abs_path = enforce_path_under_root(repo, path)
     with open(abs_path, 'r') as f:

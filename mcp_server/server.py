@@ -7,21 +7,19 @@ This server implements the full MCP protocol for Git-enforced filesystem operati
 
 import asyncio
 import logging
+import json
 from typing import Any, Dict, List, Optional
 
 import mcp
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import (
-    CallToolRequest,
-    CallToolResult,
-    ListToolsRequest,
     TextContent,
     Tool,
 )
 
 # Import our tools and types
-from .tools.git_fs import (
+from mcp_server.tools.git_fs import (
     write_and_commit_tool,
     read_with_history_tool,
     start_staged_tool,
@@ -33,28 +31,28 @@ from .tools.git_fs import (
     WriteResult,
     FinalizeOptions,
 )
-from .tools.reader import (
+from mcp_server.tools.reader import (
     extract_tool,
     answer_about_file_tool,
     ReadIntent,
 )
-from .tools.integrate_text_replace import (
+from mcp_server.tools.integrate_text_replace import (
     replace_and_commit,
     batch_replace_and_commit,
 )
-from .tools.integrate_code_diff import (
+from mcp_server.tools.integrate_code_diff import (
     preview_diff,
     apply_patch_and_commit,
 )
-from .tools.integrate_file_system import (
+from mcp_server.tools.integrate_file_system import (
     read_file,
     stat_file,
     list_dir,
     make_dir,
 )
-from .git_backend.repo import RepoRef
-from .git_backend.templates import CommitTemplate, load_default_template
-from .git_backend.commits import lint_commit_message as lint_commit_msg
+from mcp_server.git_backend.repo import RepoRef
+from mcp_server.git_backend.templates import CommitTemplate, load_default_template
+from mcp_server.git_backend.commits import lint_commit_message as lint_commit_msg
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -386,7 +384,7 @@ async def list_tools() -> List[Tool]:
     return TOOLS
 
 @server.call_tool()
-async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
+async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
     """Handle tool calls."""
     try:
         if name == "write_and_commit":
@@ -411,17 +409,17 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
                 allow_overwrite=arguments.get("allow_overwrite", True)
             )
             result = write_and_commit_tool(request)
-            return CallToolResult(content=[TextContent(type="text", text=result.model_dump_json())])
+            return [TextContent(type="text", text=result.model_dump_json())]
         
         elif name == "read_with_history":
             repo_ref = RepoRef(root=arguments["repo"])
             result = read_with_history_tool(repo_ref, arguments["path"], arguments.get("history_limit", 10))
-            return CallToolResult(content=[TextContent(type="text", text=result.model_dump_json())])
+            return [TextContent(type="text", text=json.dumps(result))]
         
         elif name == "start_staged":
             repo_ref = RepoRef(root=arguments["repo"])
             result = start_staged_tool(repo_ref, arguments.get("ticket"))
-            return CallToolResult(content=[TextContent(type="text", text=result.model_dump_json())])
+            return [TextContent(type="text", text=result.model_dump_json())]
         
         elif name == "staged_write":
             repo_ref = RepoRef(root=arguments["repo"])
@@ -435,11 +433,11 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
                 summary=arguments["summary"]
             )
             result = staged_write_tool(arguments["session_id"], request)
-            return CallToolResult(content=[TextContent(type="text", text=result.model_dump_json())])
+            return [TextContent(type="text", text=result.model_dump_json())]
         
         elif name == "staged_preview":
             result = staged_preview_tool(arguments["session_id"])
-            return CallToolResult(content=[TextContent(type="text", text=result.model_dump_json())])
+            return [TextContent(type="text", text=json.dumps(result))]
         
         elif name == "finalize_staged":
             options = FinalizeOptions(
@@ -447,11 +445,11 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
                 delete_work_branch=arguments.get("delete_work_branch", True)
             )
             result = finalize_tool(arguments["session_id"], options)
-            return CallToolResult(content=[TextContent(type="text", text=str(result))])
+            return [TextContent(type="text", text=json.dumps(result))]
         
         elif name == "abort_staged":
             result = abort_tool(arguments["session_id"])
-            return CallToolResult(content=[TextContent(type="text", text=str(result))])
+            return [TextContent(type="text", text=json.dumps(result))]
         
         elif name == "extract":
             repo_ref = RepoRef(root=arguments["repo"])
@@ -466,7 +464,7 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
                 history_limit=arguments.get("history_limit", 10)
             )
             result = extract_tool(repo_ref, intent)
-            return CallToolResult(content=[TextContent(type="text", text=result.model_dump_json())])
+            return [TextContent(type="text", text=result.model_dump_json())]
         
         elif name == "answer_about_file":
             repo_ref = RepoRef(root=arguments["repo"])
@@ -478,7 +476,7 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
                 arguments.get("after", 3),
                 arguments.get("max_spans", 20)
             )
-            return CallToolResult(content=[TextContent(type="text", text=str(result))])
+            return [TextContent(type="text", text=json.dumps(result))]
         
         elif name == "replace_and_commit":
             repo_ref = RepoRef(root=arguments["repo"])
@@ -498,7 +496,7 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
                 template,
                 arguments.get("summary", "text replacement")
             )
-            return CallToolResult(content=[TextContent(type="text", text=f'{{"commit_sha": "{result}"}}')])
+            return [TextContent(type="text", text=json.dumps({"commit_sha": result}))]
         
         elif name == "batch_replace_and_commit":
             repo_ref = RepoRef(root=arguments["repo"])
@@ -515,7 +513,7 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
                 template,
                 arguments.get("summary", "batch text replacement")
             )
-            return CallToolResult(content=[TextContent(type="text", text=f'{{"commit_shas": {result}}}')])
+            return [TextContent(type="text", text=json.dumps({"commit_shas": result}))]
         
         elif name == "preview_diff":
             repo_ref = RepoRef(root=arguments["repo"])
@@ -526,7 +524,7 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
                 arguments.get("ignore_whitespace", False),
                 arguments.get("context_lines", 3)
             )
-            return CallToolResult(content=[TextContent(type="text", text=f'{{"diff": "{result}"}}')])
+            return [TextContent(type="text", text=json.dumps({"diff": result}))]
         
         elif name == "apply_patch_and_commit":
             repo_ref = RepoRef(root=arguments["repo"])
@@ -544,27 +542,27 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
                 template,
                 arguments.get("summary", "apply patch")
             )
-            return CallToolResult(content=[TextContent(type="text", text=f'{{"commit_sha": "{result}"}}')])
+            return [TextContent(type="text", text=json.dumps({"commit_sha": result}))]
         
         elif name == "read_file":
             repo_ref = RepoRef(root=arguments["repo"])
             result = read_file(repo_ref, arguments["path"])
-            return CallToolResult(content=[TextContent(type="text", text=f'{{"content": "{result}"}}')])
+            return [TextContent(type="text", text=json.dumps({"content": result}))]
         
         elif name == "stat_file":
             repo_ref = RepoRef(root=arguments["repo"])
             result = stat_file(repo_ref, arguments["path"])
-            return CallToolResult(content=[TextContent(type="text", text=str(result))])
+            return [TextContent(type="text", text=json.dumps(result))]
         
         elif name == "list_dir":
             repo_ref = RepoRef(root=arguments["repo"])
             result = list_dir(repo_ref, arguments["path"], arguments.get("recursive", False))
-            return CallToolResult(content=[TextContent(type="text", text=f'{{"files": {result}}}')])
+            return [TextContent(type="text", text=json.dumps({"files": result}))]
         
         elif name == "make_dir":
             repo_ref = RepoRef(root=arguments["repo"])
             result = make_dir(repo_ref, arguments["path"], arguments.get("recursive", False))
-            return CallToolResult(content=[TextContent(type="text", text=str(result))])
+            return [TextContent(type="text", text=json.dumps(result))]
         
         elif name == "lint_commit_message":
             template_data = arguments["template"]
@@ -575,17 +573,14 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
                 enforce_unique_window=template_data.get("enforce_unique_window", 100)
             )
             result = lint_commit_msg(template, arguments["variables"])
-            return CallToolResult(content=[TextContent(type="text", text=str(result))])
+            return [TextContent(type="text", text=json.dumps(result))]
         
         else:
             raise ValueError(f"Unknown tool: {name}")
     
     except Exception as e:
         logger.error(f"Error in tool call {name}: {e}")
-        return CallToolResult(
-            content=[TextContent(type="text", text=f"Error: {str(e)}")],
-            isError=True
-        )
+        return [TextContent(type="text", text=f"Error: {str(e)}")]
 
 async def main():
     """Run the MCP server."""

@@ -18,7 +18,7 @@ from mcp.server.models import InitializationOptions
 from pydantic import BaseModel
 
 # Import our existing tools
-from .tools.git_fs import (
+from mcp_server.tools.git_fs import (
     write_and_commit_tool,
     read_with_history_tool,
     start_staged_tool,
@@ -30,28 +30,28 @@ from .tools.git_fs import (
     WriteResult,
     FinalizeOptions,
 )
-from .tools.reader import (
+from mcp_server.tools.reader import (
     extract_tool,
     answer_about_file_tool,
     ReadIntent,
 )
-from .tools.integrate_text_replace import (
+from mcp_server.tools.integrate_text_replace import (
     replace_and_commit,
     batch_replace_and_commit,
 )
-from .tools.integrate_code_diff import (
+from mcp_server.tools.integrate_code_diff import (
     preview_diff,
     apply_patch_and_commit,
 )
-from .tools.integrate_file_system import (
+from mcp_server.tools.integrate_file_system import (
     read_file,
     stat_file,
     list_dir,
     make_dir,
 )
-from .git_backend.repo import RepoRef
-from .git_backend.templates import CommitTemplate, load_default_template
-from .git_backend.commits import lint_commit_message as lint_commit_msg
+from mcp_server.git_backend.repo import RepoRef
+from mcp_server.git_backend.templates import CommitTemplate, load_default_template
+from mcp_server.git_backend.commits import lint_commit_message as lint_commit_msg
 
 # Create low-level server
 server = Server("fs-git")

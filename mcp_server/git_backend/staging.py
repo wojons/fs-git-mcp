@@ -3,8 +3,8 @@ import subprocess
 import uuid
 from datetime import datetime
 from typing import Dict, Any, Optional
-from .repo import RepoRef
-from .commits import write_and_commit, CommitTemplate
+from mcp_server.git_backend.repo import RepoRef
+from mcp_server.git_backend.commits import write_and_commit, CommitTemplate
 
 class StagedSession(BaseModel):
     id: str

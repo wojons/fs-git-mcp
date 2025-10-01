@@ -8,6 +8,7 @@ import json
 import subprocess
 import tempfile
 import unittest
+import sys
 from pathlib import Path
 
 
@@ -18,7 +19,7 @@ class TestMCPServerCLI(unittest.TestCase):
         """Test that CLI serve command works."""
         # Test help output
         result = subprocess.run(
-            ["python", "-m", "mcp_server.cli.main", "serve", "--help"],
+             [sys.executable, "-m", "mcp_server.cli.main", "serve", "--help"],
             capture_output=True,
             text=True,
             cwd=Path(__file__).parent.parent
@@ -36,7 +37,7 @@ class TestMCPServerCLI(unittest.TestCase):
         """Test that MCP server can start without errors."""
         # Test server startup (should exit gracefully on EOF)
         proc = subprocess.run(
-            ["python", "-m", "mcp_server.cli.main", "serve"],
+            [sys.executable, "-m", "mcp_server.cli.main", "serve"],
             input="",  # Send EOF immediately
             capture_output=True,
             text=True,
@@ -103,7 +104,7 @@ class TestMCPProjectStructure(unittest.TestCase):
         self.assertIn("fs-git-mcp", scripts)
         
         self.assertEqual(scripts["fs-git"], "mcp_server.cli.main:app")
-        self.assertEqual(scripts["fs-git-mcp"], "mcp_server.cli.main:app")
+        self.assertEqual(scripts["fs-git-mcp"], "mcp_server.server_fastmcp_new:main")
         
         print("✓ pyproject.toml has correct entry points")
     

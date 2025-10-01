@@ -3,8 +3,8 @@ import subprocess
 import re
 from pathlib import Path
 from typing import Dict, Optional, Any, List, Tuple
-from .repo import RepoRef
-from .templates import CommitTemplate
+from mcp_server.git_backend.repo import RepoRef
+from mcp_server.git_backend.templates import CommitTemplate
 
 def lint_commit_message(template: CommitTemplate, variables: Dict[str, str]) -> Dict[str, Any]:
     errors = []

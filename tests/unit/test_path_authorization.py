@@ -180,6 +180,7 @@ class TestPathAuthorizerConfig:
     def test_config_whitespace_handling(self):
         """Test that whitespace in config strings is handled properly."""
         authorizer = create_path_authorizer_from_config(
+            repo_root="/test/repo",
             allow_paths=" src/** , docs/** ",
             deny_paths=" !**/test/** , !**/tmp/** "
         )

@@ -2,11 +2,11 @@ from pydantic import BaseModel
 import os
 import subprocess
 from typing import Dict, Any, Optional
-from ..git_backend.repo import RepoRef
-from ..git_backend.commits import CommitTemplate, lint_commit_message, check_uniqueness, resolve_collision
-from ..git_backend.safety import enforce_path_under_root, check_dirty_tree, PathAuthorizer, enforce_path_authorization
-from ..git_backend.history import get_file_history, read_with_history
-from ..git_backend.staging import StagedSession, start_staged_session, get_preview, finalize_session, get_session_by_id, remove_session
+from mcp_server.git_backend.repo import RepoRef
+from mcp_server.git_backend.commits import CommitTemplate, lint_commit_message, check_uniqueness, resolve_collision
+from mcp_server.git_backend.safety import enforce_path_under_root, check_dirty_tree, PathAuthorizer, enforce_path_authorization
+from mcp_server.git_backend.history import get_file_history, read_with_history
+from mcp_server.git_backend.staging import StagedSession, start_staged_session, get_preview, finalize_session, get_session_by_id, remove_session
 
 class WriteRequest(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
@@ -52,7 +52,7 @@ def write_and_commit_tool(request: WriteRequest) -> WriteResult:
     # Create path authorizer if needed
     authorizer = request.path_authorizer
     if not authorizer and (request.allow_paths or request.deny_paths):
-        from ..git_backend.safety import create_path_authorizer_from_config
+        from mcp_server.git_backend.safety import create_path_authorizer_from_config
         authorizer = create_path_authorizer_from_config(
             repo_root=request.repo.root,
             allow_paths=request.allow_paths,
@@ -118,7 +118,7 @@ def start_staged_tool(repo: RepoRef, ticket: Optional[str] = None, template: Opt
 
 def staged_write_tool(session_id: str, request: WriteRequest) -> WriteResult:
     # For staged, we need to switch to work branch first
-    from ..git_backend.staging import get_session_by_id
+    from mcp_server.git_backend.staging import get_session_by_id
     abs_path = enforce_path_under_root(request.repo, request.path)
     session = get_session_by_id(session_id)
     if not session:

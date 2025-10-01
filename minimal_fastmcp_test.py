@@ -11,9 +11,7 @@ def add(a: int, b: int) -> int:
     """Add two numbers"""
     return a + b
 
-print(f"Tools registered: {len(mcp._tools)}")
-for tool in mcp._tools:
-    print(f"  - {tool.name}")
+# Tools registered via decorator - 1 tool (add)
 
 if __name__ == "__main__":
     mcp.run()

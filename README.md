@@ -206,6 +206,29 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for module details.
 
 See [TOOLING.md](TOOLING.md) for MCP schema and integrations.
 
+## Troubleshooting
+
+### Common Issues
+
+- **Import Errors**: Ensure `mcp_server` is in PYTHONPATH or installed with `uv pip install -e .`
+- **Git Safe Directory**: If git complains about unsafe repo, run `git config --global --add safe.directory <repo_root>`
+- **Path Authorization Denied**: Check your `FS_GIT_ALLOWED_PATHS` and `FS_GIT_DENIED_PATHS` env vars or CLI flags.
+- **Staged Session Not Found**: Sessions are stored in `~/.fs_git_sessions`. Clear if corrupted.
+- **MCP Inspector Connection**: Use `fs-git serve` for stdio mode with Inspector. For TCP, use `--transport tcp`.
+- **Subprocess Python Errors**: Tests use `sys.executable` to match your Python environment.
+
+### Logs
+
+- Server logs: Check `server.log` or stderr.
+- Git logs: Use `git log --oneline -10` in repo.
+
+### Debug Mode
+
+Run with debug:
+```bash
+FS_GIT_DEBUG=true fs-git serve --transport tcp
+```
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md).

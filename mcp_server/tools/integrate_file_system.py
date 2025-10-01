@@ -1,5 +1,5 @@
-from ..git_backend.repo import RepoRef
-from ..git_backend.safety import enforce_path_under_root
+from mcp_server.git_backend.repo import RepoRef
+from mcp_server.git_backend.safety import enforce_path_under_root
 
 
 def read_file(repo: RepoRef, path: str) -> str:

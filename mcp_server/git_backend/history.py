@@ -1,5 +1,5 @@
 import subprocess
-from .repo import RepoRef
+from mcp_server.git_backend.repo import RepoRef
 from typing import Dict, Any, List
 
 def get_file_history(repo: RepoRef, path: str, limit: int = 10) -> List[Dict[str, str]]:
@@ -24,7 +24,7 @@ def read_with_history(repo: RepoRef, path: str, history_limit: int = 10) -> Dict
     """
     Read file content and git history.
     """
-    from .safety import enforce_path_under_root
+    from mcp_server.git_backend.safety import enforce_path_under_root
     
     # Read content
     try:

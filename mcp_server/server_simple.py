@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Simple MCP Server for Git-enforced filesystem operations.
-
+ 
 This is a basic JSON-RPC server that can be extended to support the full MCP protocol.
 For now, it provides the core functionality in a simple format.
 """
@@ -11,7 +11,7 @@ import sys
 from typing import Any, Dict, List, Optional
 
 # Import our tools
-from .tools.git_fs import (
+from mcp_server.tools.git_fs import (
     write_and_commit_tool,
     read_with_history_tool,
     start_staged_tool,
@@ -23,31 +23,45 @@ from .tools.git_fs import (
     WriteResult,
     FinalizeOptions,
 )
-from .tools.reader import (
+from mcp_server.tools.reader import (
     extract_tool,
     answer_about_file_tool,
     ReadIntent,
 )
-from .tools.integrate_text_replace import (
+from mcp_server.tools.integrate_text_replace import (
     replace_and_commit,
     batch_replace_and_commit,
 )
-from .tools.integrate_code_diff import (
+from mcp_server.tools.integrate_code_diff import (
     preview_diff,
     apply_patch_and_commit,
 )
-from .tools.integrate_file_system import (
+from mcp_server.tools.integrate_file_system import (
     read_file,
     stat_file,
     list_dir,
     make_dir,
 )
-from .git_backend.repo import RepoRef
-from .git_backend.templates import CommitTemplate, load_default_template
-from .git_backend.commits import lint_commit_message as lint_commit_msg
+from mcp_server.git_backend.repo import RepoRef
+from mcp_server.git_backend.templates import CommitTemplate, load_default_template
+from mcp_server.git_backend.commits import lint_commit_message as lint_commit_msg
 
 class MCPServer:
     """Simple MCP server implementation."""
+    
+    def get_repo_ref(self, params: Dict[str, Any]) -> RepoRef:
+        repo_param = params.get("repo")
+        if isinstance(repo_param, dict):
+            root = repo_param.get("root")
+            if root is None:
+                raise ValueError("Repo dict missing root key")
+            branch = repo_param.get("branch")
+        else:
+            root = repo_param
+            if not isinstance(root, str):
+                raise ValueError("Repo parameter must be a string path or a dict with root key")
+            branch = None
+        return RepoRef(root=root, branch=branch)
     
     def __init__(self):
         self.tools = {
@@ -209,7 +223,7 @@ class MCPServer:
             }
     
     def handle_write_and_commit(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        repo_ref = RepoRef(root=params["repo"])
+        repo_ref = self.get_repo_ref(params)
         template_data = params.get("template", {})
         template = CommitTemplate(
             subject=template_data.get("subject", "[{op}] {path} – {summary}"),
@@ -233,16 +247,16 @@ class MCPServer:
         return result.model_dump()
     
     def handle_read_with_history(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        repo_ref = RepoRef(root=params["repo"])
+        repo_ref = self.get_repo_ref(params)
         return read_with_history_tool(repo_ref, params["path"], params.get("history_limit", 10))
     
     def handle_start_staged(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        repo_ref = RepoRef(root=params["repo"])
+        repo_ref = self.get_repo_ref(params)
         result = start_staged_tool(repo_ref, params.get("ticket"))
         return result.model_dump()
     
     def handle_staged_write(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        repo_ref = RepoRef(root=params["repo"])
+        repo_ref = self.get_repo_ref(params)
         template = load_default_template()
         request = WriteRequest(
             repo=repo_ref,
@@ -272,10 +286,10 @@ class MCPServer:
         return result
     
     def handle_extract(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        repo_ref = RepoRef(root=params["repo"])
+        repo_ref = self.get_repo_ref(params)
         intent = ReadIntent(
             path=params["path"],
-            query=params["query"],
+            query=params.get("query"),
             regex=params.get("regex", False),
             before=params.get("before", 3),
             after=params.get("after", 3),
@@ -287,7 +301,7 @@ class MCPServer:
         return result.model_dump()
     
     def handle_answer_about_file(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        repo_ref = RepoRef(root=params["repo"])
+        repo_ref = self.get_repo_ref(params)
         result = answer_about_file_tool(
             repo_ref, 
             params["path"], 
@@ -299,7 +313,7 @@ class MCPServer:
         return result
     
     def handle_replace_and_commit(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        repo_ref = RepoRef(root=params["repo"])
+        repo_ref = self.get_repo_ref(params)
         template_data = params.get("template", {})
         template = CommitTemplate(
             subject=template_data.get("subject", "[{op}] {path} – {summary}"),
@@ -319,7 +333,7 @@ class MCPServer:
         return {"commit_sha": result}
     
     def handle_batch_replace_and_commit(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        repo_ref = RepoRef(root=params["repo"])
+        repo_ref = self.get_repo_ref(params)
         template_data = params.get("template", {})
         template = CommitTemplate(
             subject=template_data.get("subject", "[{op}] {path} – {summary}"),
@@ -336,7 +350,7 @@ class MCPServer:
         return {"commit_shas": result}
     
     def handle_preview_diff(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        repo_ref = RepoRef(root=params["repo"])
+        repo_ref = self.get_repo_ref(params)
         result = preview_diff(
             repo_ref,
             params["path"],
@@ -347,7 +361,7 @@ class MCPServer:
         return {"diff": result}
     
     def handle_apply_patch_and_commit(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        repo_ref = RepoRef(root=params["repo"])
+        repo_ref = self.get_repo_ref(params)
         template_data = params.get("template", {})
         template = CommitTemplate(
             subject=template_data.get("subject", "[{op}] {path} – {summary}"),
@@ -365,22 +379,22 @@ class MCPServer:
         return {"commit_sha": result}
     
     def handle_read_file(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        repo_ref = RepoRef(root=params["repo"])
+        repo_ref = self.get_repo_ref(params)
         result = read_file(repo_ref, params["path"])
         return {"content": result}
     
     def handle_stat_file(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        repo_ref = RepoRef(root=params["repo"])
+        repo_ref = self.get_repo_ref(params)
         result = stat_file(repo_ref, params["path"])
         return result
     
     def handle_list_dir(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        repo_ref = RepoRef(root=params["repo"])
+        repo_ref = self.get_repo_ref(params)
         result = list_dir(repo_ref, params["path"], params.get("recursive", False))
         return {"files": result}
     
     def handle_make_dir(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        repo_ref = RepoRef(root=params["repo"])
+        repo_ref = self.get_repo_ref(params)
         result = make_dir(repo_ref, params["path"], params.get("recursive", False))
         return result
     
