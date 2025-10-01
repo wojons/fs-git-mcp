@@ -384,7 +384,7 @@ def serve(
         else:
             env['PYTHONPATH'] = os.path.dirname(server_dir)
             
-        subprocess.run([sys.executable, server_file], env=env)
+        subprocess.run([sys.executable, server_file], env=env, cwd=server_dir)
         
     elif transport == "tcp":
         typer.echo(f"Starting fs-git MCP server on tcp://{host}:{port}", err=True)
