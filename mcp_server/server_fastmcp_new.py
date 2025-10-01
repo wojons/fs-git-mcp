@@ -223,22 +223,27 @@ def answer_about_file(
     after: int = 3,
     max_spans: int = 20
 ) -> Dict[str, Any]:
-    """Answer questions about a file's content using keyword-based extraction."""
+    """Answer questions about a file's content using keyword-based extraction and citations."""
     repo_ref = get_repo_ref(repo)
+    
+    # Get history for citations
+    history_result = read_with_history_tool(repo_ref, path, history_limit=1)
+    current_commit = history_result.get('history', [{}])[0] if history_result.get('history') else {}
     
     # Read the file content
     content = _read_file(repo_ref, path)
     if not content:
-        return {"answer": "The file is empty or could not be read."}
+        return {"answer": "The file is empty or could not be read.", "citations": []}
     
     # Extract keywords from question (simple: words longer than 2 chars, lowercase)
     keywords = [word.lower() for word in question.split() if len(word) > 2 and word.isalpha()]
     if not keywords:
-        return {"answer": "No clear keywords found in the question."}
+        return {"answer": "No clear keywords found in the question.", "citations": []}
     
     # Split content into lines
     lines = content.splitlines()
     spans = []
+    citations = []
     
     for i, line in enumerate(lines):
         if any(keyword in line.lower() for keyword in keywords):
@@ -248,14 +253,20 @@ def answer_about_file(
             span_lines = lines[start:end]
             span = '\n'.join(span_lines)
             spans.append(f"Lines {start+1}-{end}:\\n{span}")
+            
+            # Add citation
+            citations.append({
+                "sha": current_commit.get('sha', 'unknown'),
+                "lines": [f"{start+1}-{end}"]
+            })
     
     if spans:
         relevant_content = '\\n\\n---\\n\\n'.join(spans[:max_spans])
-        answer = f"Based on keywords from the question ('{' '.join(keywords)}'), here are relevant excerpts from the file:\\n\\n{relevant_content}"
+        answer = f"Based on keywords from the question ('{' '.join(keywords)}'), here are relevant excerpts from the file {path} (current commit {current_commit.get('sha', 'unknown')}):\\n\\n{relevant_content}"
     else:
-        answer = f"No lines containing keywords ('{' '.join(keywords)}') were found in the file."
+        answer = f"No lines containing keywords ('{' '.join(keywords)}') were found in the file {path}."
     
-    return {"answer": answer}
+    return {"answer": answer, "citations": citations[:max_spans]}
 
 @mcp.tool()
 def replace_and_commit(
