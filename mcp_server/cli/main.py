@@ -85,11 +85,9 @@ def write(repo: str = typer.Option(..., "--repo", help="Repository root path"),
         deny_paths=deny_paths
     )
     
-    # Only show authorization info if patterns are configured (CLI or env vars)
-    has_patterns = (allow_paths or deny_paths or 
-                   path_authorizer.allowed_regexes or path_authorizer.denied_regexes or
-                   path_authorizer.allowed_globs or path_authorizer.denied_globs)
-    
+# Only show authorization info if patterns are configured (CLI or env vars)
+    has_patterns = bool(allow_paths or deny_paths or path_authorizer.allowed_patterns or path_authorizer.denied_patterns)
+
     if has_patterns:
         typer.echo(f"Path authorization enabled: {path_authorizer.get_allowed_paths_summary()}")
         typer.echo(f"Denied paths: {path_authorizer.get_denied_paths_summary()}")

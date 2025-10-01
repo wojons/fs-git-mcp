@@ -1,10 +1,40 @@
 import os
 import re
 import subprocess
-import fnmatch
+from typing import List, Optional, Pattern
 from pathlib import Path
-from typing import List, Optional, Pattern, Set
 from mcp_server.git_backend.repo import RepoRef
+
+def glob_to_regex(glob_pattern: str) -> str:
+    """
+    Convert glob pattern to regex pattern.
+    Supports basic glob features including **, *, ?, and character classes.
+    """
+    # Escape special regex chars that are literal in glob
+    i = 0
+    regex_parts = ['^']
+    while i < len(glob_pattern):
+        c = glob_pattern[i]
+        if c == '*':
+            if i + 1 < len(glob_pattern) and glob_pattern[i + 1] == '*':
+                # ** matches any sequence including /
+                regex_parts.append('.*')
+                i += 2
+            else:
+                # * matches any non / chars
+                regex_parts.append('[^/]*')
+                i += 1
+        elif c == '?':
+            regex_parts.append('[^/]')
+            i += 1
+        elif c in '.^$+?()[]{}|\\':
+            regex_parts.append(re.escape(c))
+            i += 1
+        else:
+            regex_parts.append(re.escape(c))
+            i += 1
+    regex_parts.append('$')
+    return ''.join(regex_parts)
 
 def enforce_path_under_root(repo: RepoRef, path: str) -> str:
     abs_path = os.path.abspath(os.path.join(repo.root, path))
@@ -52,7 +82,7 @@ class PathAuthorizer:
     """
     Path authorization system for controlling access to files and directories.
     
-    Supports glob patterns using pathlib.Path.match (including **), regex patterns, 
+    Supports glob patterns (converted to regex), regex patterns, 
     and deny path syntax with ! prefix.
     """
     
@@ -69,47 +99,39 @@ class PathAuthorizer:
             repo_root: Repository root path for resolving relative paths
         """
         self.repo_root = repo_root
-        self.allowed_globs: List[str] = []
-        self.denied_globs: List[str] = []
         self.allowed_regexes: List[Pattern[str]] = []
         self.denied_regexes: List[Pattern[str]] = []
+        self.allowed_patterns = allowed_patterns or []
+        self.denied_patterns = denied_patterns or []
         
         # Process allowed patterns
-        if allowed_patterns:
-            for pattern in allowed_patterns:
-                if pattern.startswith('r"') or pattern.startswith("r'"):
-                    # Extract and compile regex
-                    raw_pattern = pattern[2:-1] if pattern.endswith(('"', "'")) else pattern[1:]
-                    self.allowed_regexes.append(re.compile(raw_pattern))
-                else:
-                    self.allowed_globs.append(pattern)
+        for pattern in allowed_patterns or []:
+            if pattern.startswith('r"') or pattern.startswith("r'"):
+                # Extract and compile regex
+                raw_pattern = pattern[2:-1] if pattern.endswith(('"', "'")) else pattern[1:]
+                self.allowed_regexes.append(re.compile(raw_pattern))
+            else:
+                # Convert glob to regex
+                glob_regex = glob_to_regex(pattern)
+                self.allowed_regexes.append(re.compile(glob_regex))
         
         # Process denied patterns
-        if denied_patterns:
-            for pattern in denied_patterns:
-                clean_pattern = pattern.lstrip('!')
-                if clean_pattern.startswith('r"') or clean_pattern.startswith("r'"):
-                    raw_pattern = clean_pattern[2:-1] if clean_pattern.endswith(('"', "'")) else clean_pattern[1:]
-                    self.denied_regexes.append(re.compile(raw_pattern))
-                else:
-                    self.denied_globs.append(clean_pattern)
-    
-    def _matches_glob(self, rel_path: str, glob_patterns: List[str]) -> bool:
-        """
-        Check if rel_path matches any glob pattern using Path.match.
-        """
-        path_obj = Path(rel_path)
-        for pattern in glob_patterns:
-            if path_obj.match(pattern):
-                return True
-        return False
+        for pattern in denied_patterns or []:
+            clean_pattern = pattern.lstrip('!')
+            if clean_pattern.startswith('r"') or clean_pattern.startswith("r'"):
+                raw_pattern = clean_pattern[2:-1] if clean_pattern.endswith(('"', "'")) else clean_pattern[1:]
+                self.denied_regexes.append(re.compile(raw_pattern))
+            else:
+                # Convert glob to regex
+                glob_regex = glob_to_regex(clean_pattern)
+                self.denied_regexes.append(re.compile(glob_regex))
     
     def _matches_regex(self, rel_path: str, regex_patterns: List[Pattern[str]]) -> bool:
         """
         Check if rel_path matches any regex pattern.
         """
         for pattern in regex_patterns:
-            if pattern.fullmatch(rel_path):
+            if pattern.match(rel_path):
                 return True
         return False
     
@@ -140,41 +162,30 @@ class PathAuthorizer:
             rel_path = path.replace(os.sep, '/').lstrip('/')
         
         # Check denied patterns first (deny takes precedence)
-        if self.denied_regexes or self.denied_globs:
-            if self._matches_regex(rel_path, self.denied_regexes):
-                return False
-            if self._matches_glob(rel_path, self.denied_globs):
-                return False
+        if self._matches_regex(rel_path, self.denied_regexes):
+            return False
         
         # If no allowed patterns specified, allow everything (except denied)
-        if not self.allowed_regexes and not self.allowed_globs:
+        if not self.allowed_regexes:
             return True
         
         # Check allowed patterns
-        if self.allowed_regexes or self.allowed_globs:
-            if self._matches_regex(rel_path, self.allowed_regexes):
-                return True
-            if self._matches_glob(rel_path, self.allowed_globs):
-                return True
-            return False
-        
-        return True
+        return self._matches_regex(rel_path, self.allowed_regexes)
     
     def get_allowed_paths_summary(self) -> str:
         """Get a summary of allowed path patterns."""
-        if not self.allowed_regexes and not self.allowed_globs:
+        if not self.allowed_patterns:
             return "All paths allowed (except denied patterns)"
         
-        patterns = [p.pattern for p in self.allowed_regexes] + self.allowed_globs
-        return f"Allowed patterns: {', '.join(patterns)}"
+        return f"Allowed patterns: {', '.join(self.allowed_patterns)}"
     
     def get_denied_paths_summary(self) -> str:
         """Get a summary of denied path patterns."""
-        if not self.denied_regexes and not self.denied_globs:
+        if not self.denied_patterns:
             return "No denied patterns"
         
-        patterns = [p.pattern for p in self.denied_regexes] + [f"!{p}" for p in self.denied_globs]
-        return f"Denied patterns: {', '.join(patterns)}"
+        return f"Denied patterns: {', '.join(self.denied_patterns)}"
+
 
 def create_path_authorizer_from_config(repo_root: Optional[str] = None,
                                      allow_paths: Optional[str] = None,

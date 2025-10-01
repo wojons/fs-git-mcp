@@ -10,6 +10,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+@pytest.mark.asyncio
 async def test_mcp_server():
     """Test MCP server with stdio transport."""
     print("🧪 Testing MCP Server...")
