@@ -10,85 +10,50 @@ fs_code_diff, and fs_io tool namespaces.
 from typing import Any, Dict, List, Optional
 import sys
 import os
+from pathlib import Path
+
+# Ensure package root is in sys.path for imports when run as script
+package_root = Path(__file__).parent.parent
+if package_root not in sys.path:
+    sys.path.insert(0, str(package_root))
 
 from mcp.server.fastmcp import FastMCP
 
-# Add the parent directory to Python path to enable imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 # Import our existing tools
-try:
-    # Try absolute imports first (when run as module)
-    from mcp_server.tools.git_fs import (
-        write_and_commit_tool,
-        read_with_history_tool,
-        start_staged_tool,
-        staged_write_tool,
-        staged_preview_tool,
-        finalize_tool,
-        abort_tool,
-        WriteRequest,
-        WriteResult,
-        FinalizeOptions,
-    )
-    from mcp_server.tools.reader import (
-        extract_tool,
-        answer_about_file_tool,
-        ReadIntent,
-    )
-    from mcp_server.tools.integrate_text_replace import (
-        replace_and_commit,
-        batch_replace_and_commit,
-    )
-    from mcp_server.tools.integrate_code_diff import (
-        preview_diff,
-        apply_patch_and_commit,
-    )
-    from mcp_server.tools.integrate_file_system import (
-        read_file,
-        stat_file,
-        list_dir,
-        make_dir,
-    )
-    from mcp_server.git_backend.repo import RepoRef
-    from mcp_server.git_backend.templates import CommitTemplate, load_default_template
-    from mcp_server.git_backend.commits import lint_commit_message as lint_commit_msg
-except ImportError:
-    # Fall back to relative imports (when run as script from mcp_server directory)
-    from tools.git_fs import (
-        write_and_commit_tool,
-        read_with_history_tool,
-        start_staged_tool,
-        staged_write_tool,
-        staged_preview_tool,
-        finalize_tool,
-        abort_tool,
-        WriteRequest,
-        WriteResult,
-        FinalizeOptions,
-    )
-    from tools.reader import (
-        extract_tool,
-        answer_about_file_tool,
-        ReadIntent,
-    )
-    from tools.integrate_text_replace import (
-        replace_and_commit,
-        batch_replace_and_commit,
-    )
-    from tools.integrate_code_diff import (
-        preview_diff,
-        apply_patch_and_commit,
-    )
-    from tools.integrate_file_system import (
-        read_file,
-        stat_file,
-        list_dir,
-        make_dir,
-    )
-    from git_backend.repo import RepoRef
-    from git_backend.templates import CommitTemplate, load_default_template
-    from git_backend.commits import lint_commit_message as lint_commit_msg
+from mcp_server.tools.git_fs import (
+    write_and_commit_tool,
+    read_with_history_tool,
+    start_staged_tool,
+    staged_write_tool,
+    staged_preview_tool,
+    finalize_tool,
+    abort_tool,
+    WriteRequest,
+    WriteResult,
+    FinalizeOptions,
+)
+from mcp_server.tools.reader import (
+    extract_tool,
+    answer_about_file_tool,
+    ReadIntent,
+)
+from mcp_server.tools.integrate_text_replace import (
+    replace_and_commit,
+    batch_replace_and_commit,
+)
+from mcp_server.tools.integrate_code_diff import (
+    preview_diff,
+    apply_patch_and_commit,
+)
+from mcp_server.tools.integrate_file_system import (
+    read_file,
+    stat_file,
+    list_dir,
+    make_dir,
+)
+from mcp_server.git_backend.repo import RepoRef
+from mcp_server.git_backend.templates import CommitTemplate, load_default_template
+from mcp_server.git_backend.commits import lint_commit_message as lint_commit_msg
 
 # Create FastMCP server
 mcp = FastMCP("fs-git")
@@ -120,7 +85,11 @@ def write_and_commit(
     allow_overwrite: bool = True
 ) -> Dict[str, Any]:
     """Write a file and create an atomic git commit with templated message."""
-    repo_ref = RepoRef(root=repo["root"], branch=repo.get("branch"))
+    root = repo.get("root") or repo.get("path")
+    if root is None:
+        raise ValueError("Repo parameter must contain 'root' or 'path' key")
+    branch = repo.get("branch")
+    repo_ref = RepoRef(root=root, branch=branch)
     commit_template = to_commit_template(template)
     
     request = WriteRequest(
@@ -146,7 +115,11 @@ def read_with_history(
     history_limit: int = 10
 ) -> Dict[str, Any]:
     """Read file content with git history."""
-    repo_ref = RepoRef(root=repo["root"], branch=repo.get("branch"))
+    root = repo.get("root") or repo.get("path")
+    if root is None:
+        raise ValueError("Repo parameter must contain 'root' or 'path' key")
+    branch = repo.get("branch")
+    repo_ref = RepoRef(root=root, branch=branch)
     result = read_with_history_tool(repo_ref, path, history_limit)
     return result
 
@@ -156,7 +129,11 @@ def start_staged(
     ticket: Optional[str] = None
 ) -> Dict[str, Any]:
     """Start a staged editing session."""
-    repo_ref = RepoRef(root=repo["root"], branch=repo.get("branch"))
+    root = repo.get("root") or repo.get("path")
+    if root is None:
+        raise ValueError("Repo parameter must contain 'root' or 'path' key")
+    branch = repo.get("branch")
+    repo_ref = RepoRef(root=root, branch=branch)
     result = start_staged_tool(repo_ref, ticket)
     return result.model_dump()
 
@@ -169,7 +146,11 @@ def staged_write(
     summary: str = "staged edit"
 ) -> Dict[str, Any]:
     """Write to a staged session."""
-    repo_ref = RepoRef(root=repo["root"], branch=repo.get("branch"))
+    root = repo.get("root") or repo.get("path")
+    if root is None:
+        raise ValueError("Repo parameter must contain 'root' or 'path' key")
+    branch = repo.get("branch")
+    repo_ref = RepoRef(root=root, branch=branch)
     template = load_default_template()
     
     request = WriteRequest(
@@ -223,7 +204,11 @@ def extract(
     history_limit: int = 10
 ) -> Dict[str, Any]:
     """Extract relevant spans from a file based on query."""
-    repo_ref = RepoRef(root=repo["root"], branch=repo.get("branch"))
+    root = repo.get("root") or repo.get("path")
+    if root is None:
+        raise ValueError("Repo parameter must contain 'root' or 'path' key")
+    branch = repo.get("branch")
+    repo_ref = RepoRef(root=root, branch=branch)
     read_intent = ReadIntent(
         path=path,
         query=query,
@@ -248,7 +233,11 @@ def answer_about_file(
     max_spans: int = 20
 ) -> Dict[str, Any]:
     """Answer questions about a file's content."""
-    repo_ref = RepoRef(root=repo["root"], branch=repo.get("branch"))
+    root = repo.get("root") or repo.get("path")
+    if root is None:
+        raise ValueError("Repo parameter must contain 'root' or 'path' key")
+    branch = repo.get("branch")
+    repo_ref = RepoRef(root=root, branch=branch)
     result = answer_about_file_tool(
         repo_ref,
         path,
@@ -270,7 +259,11 @@ def replace_and_commit(
     summary: str = "text replacement"
 ) -> Dict[str, Any]:
     """Replace text in file and commit."""
-    repo_ref = RepoRef(root=repo["root"], branch=repo.get("branch"))
+    root = repo.get("root") or repo.get("path")
+    if root is None:
+        raise ValueError("Repo parameter must contain 'root' or 'path' key")
+    branch = repo.get("branch")
+    repo_ref = RepoRef(root=root, branch=branch)
     commit_template = to_commit_template(template)
     
     result = replace_and_commit(
@@ -293,7 +286,11 @@ def preview_diff(
     context_lines: int = 3
 ) -> Dict[str, Any]:
     """Preview diff between original and modified content."""
-    repo_ref = RepoRef(root=repo["root"], branch=repo.get("branch"))
+    root = repo.get("root") or repo.get("path")
+    if root is None:
+        raise ValueError("Repo parameter must contain 'root' or 'path' key")
+    branch = repo.get("branch")
+    repo_ref = RepoRef(root=root, branch=branch)
     result = preview_diff(
         repo_ref,
         path,
@@ -309,13 +306,17 @@ def read_file(
     path: str
 ) -> Dict[str, Any]:
     """Read file from repository."""
-    repo_ref = RepoRef(root=repo["root"], branch=repo.get("branch"))
+    root = repo.get("root") or repo.get("path")
+    if root is None:
+        raise ValueError("Repo parameter must contain 'root' or 'path' key")
+    branch = repo.get("branch")
+    repo_ref = RepoRef(root=root, branch=branch)
     result = read_file(repo_ref, path)
     return {"content": result}
 
 def main():
     """Run the MCP server."""
-    mcp.run()
+    mcp.run(transport="stdio")
 
 if __name__ == "__main__":
     main()
