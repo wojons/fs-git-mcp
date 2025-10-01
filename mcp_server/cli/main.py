@@ -87,8 +87,8 @@ def write(repo: str = typer.Option(..., "--repo", help="Repository root path"),
     
     # Only show authorization info if patterns are configured (CLI or env vars)
     has_patterns = (allow_paths or deny_paths or 
-                   path_authorizer.allowed_patterns or path_authorizer.denied_patterns or
-                   path_authorizer.allowed_glob_patterns or path_authorizer.denied_glob_patterns)
+                   path_authorizer.allowed_regexes or path_authorizer.denied_regexes or
+                   path_authorizer.allowed_globs or path_authorizer.denied_globs)
     
     if has_patterns:
         typer.echo(f"Path authorization enabled: {path_authorizer.get_allowed_paths_summary()}")
@@ -352,40 +352,26 @@ def serve(
     port: int = typer.Option(8080, "--port", help="Port for TCP transport"),
     host: str = typer.Option("localhost", "--host", help="Host for TCP transport")
 ):
-    # Fix for Typer option parsing issue
-    if not isinstance(transport, str):
-        transport = "stdio"
-    elif transport is None:
-        transport = "stdio"
-    
-    """
+    '''
     Start the MCP server for git-enforced filesystem operations.
     
     Uses stdio transport by default for compatibility with Claude Desktop and MCP Inspector.
     Use TCP transport for development and testing.
-    """
+    '''
+    # Fix for Typer option parsing issue - ensure transport is string
+    if not isinstance(transport, str):
+        transport = "stdio"
+    if transport is None:
+        transport = "stdio"
+    
     if transport == "stdio":
         typer.echo("Starting fs-git MCP server on stdio...", err=True)
         typer.echo("Use with Claude Desktop or MCP Inspector", err=True)
         
-        # Import and run the FastMCP server
-        import subprocess
-        import sys
-        import os
-        
-        # Run the FastMCP server as a subprocess
-        server_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "server_fastmcp_new.py")
-        server_dir = os.path.dirname(os.path.dirname(__file__))
-        
-        # Set PYTHONPATH to include the parent directory so mcp_server can be imported
-        env = os.environ.copy()
-        if 'PYTHONPATH' in env:
-            env['PYTHONPATH'] = f"{os.path.dirname(server_dir)}:{env['PYTHONPATH']}"
-        else:
-            env['PYTHONPATH'] = os.path.dirname(server_dir)
-            
-        subprocess.run([sys.executable, server_file], env=env, cwd=server_dir)
-        
+        # For stdio transport, run directly in this process
+        from mcp_server.server_fastmcp_new import mcp
+        mcp.run(transport="stdio")
+    
     elif transport == "tcp":
         typer.echo(f"Starting fs-git MCP server on tcp://{host}:{port}", err=True)
         
