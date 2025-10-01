@@ -4,11 +4,13 @@ import subprocess
 from typing import Dict, Any, Optional
 from ..git_backend.repo import RepoRef
 from ..git_backend.commits import CommitTemplate, lint_commit_message, check_uniqueness, resolve_collision
-from ..git_backend.safety import enforce_path_under_root, check_dirty_tree
+from ..git_backend.safety import enforce_path_under_root, check_dirty_tree, PathAuthorizer, enforce_path_authorization
 from ..git_backend.history import get_file_history, read_with_history
 from ..git_backend.staging import StagedSession, start_staged_session, get_preview, finalize_session, get_session_by_id, remove_session
 
 class WriteRequest(BaseModel):
+    model_config = {"arbitrary_types_allowed": True}
+    
     repo: RepoRef
     path: str
     content: str
@@ -20,6 +22,10 @@ class WriteRequest(BaseModel):
     summary: str = "file write"
     reason: Optional[str] = None
     ticket: Optional[str] = None
+    # Path authorization
+    allow_paths: Optional[str] = None
+    deny_paths: Optional[str] = None
+    path_authorizer: Optional[PathAuthorizer] = None
 
 class WriteResult(BaseModel):
     path: str
@@ -43,7 +49,34 @@ class FinalizeOptions(BaseModel):
     delete_work_branch: bool = True
 
 def write_and_commit_tool(request: WriteRequest) -> WriteResult:
+    # Create path authorizer if needed
+    authorizer = request.path_authorizer
+    if not authorizer and (request.allow_paths or request.deny_paths):
+        from ..git_backend.safety import create_path_authorizer_from_config
+        authorizer = create_path_authorizer_from_config(
+            repo_root=request.repo.root,
+            allow_paths=request.allow_paths,
+            deny_paths=request.deny_paths
+        )
+    
+    # Enforce path traversal protection
     abs_path = enforce_path_under_root(request.repo, request.path)
+    
+    # Enforce path authorization if authorizer is provided
+    if authorizer:
+        try:
+            # Check if the absolute path is authorized
+            if not authorizer.is_path_allowed(abs_path):
+                denied_summary = authorizer.get_denied_paths_summary()
+                allowed_summary = authorizer.get_allowed_paths_summary()
+                raise ValueError(
+                    f"Path '{request.path}' is not authorized. "
+                    f"{denied_summary}. {allowed_summary}"
+                )
+        except ValueError as e:
+            # If path authorization fails, raise the error
+            raise ValueError(f"Path authorization failed: {e}")
+    
     if check_dirty_tree(request.repo) and not request.allow_overwrite:
         raise ValueError("Working tree is dirty and allow_overwrite is false")
     variables = {"op": request.op, "path": request.path, "summary": request.summary, "reason": request.reason or "", "ticket": request.ticket or "", "files": "", "refs": ""}

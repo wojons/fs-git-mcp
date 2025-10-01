@@ -103,7 +103,7 @@ class TestMCPProjectStructure(unittest.TestCase):
         self.assertIn("fs-git-mcp", scripts)
         
         self.assertEqual(scripts["fs-git"], "mcp_server.cli.main:app")
-        self.assertEqual(scripts["fs-git-mcp"], "mcp_server.cli.main:serve")
+        self.assertEqual(scripts["fs-git-mcp"], "mcp_server.cli.main:app")
         
         print("✓ pyproject.toml has correct entry points")
     

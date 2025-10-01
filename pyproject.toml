@@ -11,7 +11,7 @@ dependencies = [
     "gitpython>=3.1",
     "dulwich>=0.21",
     "mcp>=1.0.0",
-    "mcp.server.fastmcp",
+    "mcp[cli]",
 ]
 
 [project.optional-dependencies]
@@ -26,7 +26,7 @@ dev = [
 
 [project.scripts]
 fs-git = "mcp_server.cli.main:app"
-fs-git-mcp = "mcp_server.cli.main:serve"
+fs-git-mcp = "mcp_server.cli.main:app"
 
 [build-system]
 requires = ["hatchling"]

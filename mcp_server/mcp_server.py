@@ -13,7 +13,7 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel
 
 # Import our existing tools
-from .tools.git_fs import (
+from mcp_server.tools.git_fs import (
     write_and_commit_tool,
     read_with_history_tool,
     start_staged_tool,
@@ -25,40 +25,31 @@ from .tools.git_fs import (
     WriteResult,
     FinalizeOptions,
 )
-from .tools.reader import (
+from mcp_server.tools.reader import (
     extract_tool,
     answer_about_file_tool,
     ReadIntent,
 )
-from .tools.integrate_text_replace import (
+from mcp_server.tools.integrate_text_replace import (
     replace_and_commit,
     batch_replace_and_commit,
 )
-from .tools.integrate_code_diff import (
+from mcp_server.tools.integrate_code_diff import (
     preview_diff,
     apply_patch_and_commit,
 )
-from .tools.integrate_file_system import (
+from mcp_server.tools.integrate_file_system import (
     read_file,
     stat_file,
     list_dir,
     make_dir,
 )
-from .git_backend.repo import RepoRef
-from .git_backend.templates import CommitTemplate, load_default_template
-from .git_backend.commits import lint_commit_message as lint_commit_msg
+from mcp_server.git_backend.repo import RepoRef
+from mcp_server.git_backend.templates import CommitTemplate, load_default_template
+from mcp_server.git_backend.commits import lint_commit_message as lint_commit_msg
 
 # Create FastMCP server
-mcp = FastMCP(
-    "fs-git",
-    description="Git-enforced filesystem with direct and staged modes",
-    instructions=(
-        "An MCP server that provides Git-enforced filesystem operations. "
-        "All file writes automatically create atomic git commits with templated messages. "
-        "Supports both direct write-and-commit mode and staged branch workflows for "
-        "batched changes. Includes reader subagent for intent-directed content extraction."
-    )
-)
+mcp = FastMCP("fs-git")
 
 # Helper function to convert dict to CommitTemplate
 def to_commit_template(template_dict: Optional[Dict[str, Any]], default_subject: str = "[{op}] {path} – {summary}") -> CommitTemplate:

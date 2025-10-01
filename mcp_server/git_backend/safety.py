@@ -1,7 +1,8 @@
 import os
+import re
 import subprocess
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Pattern, Set
 from .repo import RepoRef
 
 def enforce_path_under_root(repo: RepoRef, path: str) -> str:
@@ -44,3 +45,250 @@ def validate_commit_message(subject: str, body: Optional[str] = None) -> tuple[b
     if '{op}' not in subject or '{path}' not in subject or '{summary}' not in subject:
         errors.append("Subject must include {op}, {path}, {summary} tokens")
     return len(errors) == 0, errors
+
+
+class PathAuthorizer:
+    """
+    Path authorization system for controlling access to files and directories.
+    
+    Supports glob patterns, regex patterns, and deny path syntax with ! prefix.
+    """
+    
+    def __init__(self, 
+                 allowed_patterns: Optional[List[str]] = None,
+                 denied_patterns: Optional[List[str]] = None,
+                 repo_root: Optional[str] = None):
+        """
+        Initialize path authorizer.
+        
+        Args:
+            allowed_patterns: List of glob/regex patterns for allowed paths
+            denied_patterns: List of glob/regex patterns for denied paths (with ! prefix)
+            repo_root: Repository root path for resolving relative paths
+        """
+        self.repo_root = repo_root
+        self.allowed_patterns: List[Pattern[str]] = []
+        self.denied_patterns: List[Pattern[str]] = []
+        self.denied_glob_patterns: List[str] = []
+        self.allowed_glob_patterns: List[str] = []
+        
+        # Process allowed patterns
+        if allowed_patterns:
+            for pattern in allowed_patterns:
+                if self._is_regex_pattern(pattern):
+                    self.allowed_patterns.append(re.compile(pattern))
+                else:
+                    self.allowed_glob_patterns.append(pattern)
+        
+        # Process denied patterns
+        if denied_patterns:
+            for pattern in denied_patterns:
+                # Remove ! prefix if present
+                clean_pattern = pattern[1:] if pattern.startswith('!') else pattern
+                if self._is_regex_pattern(clean_pattern):
+                    self.denied_patterns.append(re.compile(clean_pattern))
+                else:
+                    self.denied_glob_patterns.append(clean_pattern)
+    
+    def _is_regex_pattern(self, pattern: str) -> bool:
+        """
+        Determine if a pattern is a regex pattern.
+        """
+        # Raw string patterns (starting with r") are likely regex
+        if pattern.startswith('r"') or pattern.startswith("r'"):
+            return True
+        
+        # Common glob patterns - treat these as glob, not regex
+        if '**' in pattern or pattern.endswith('*') or '?' in pattern:
+            return False
+        
+        # Patterns with regex-specific syntax
+        regex_indicators = ['[', ']', '(', ')', '{', '}', '^', '$', '+']
+        return any(indicator in pattern for indicator in regex_indicators)
+    
+    def _matches_glob(self, path: str, glob_patterns: List[str]) -> bool:
+        """
+        Check if path matches any of the glob patterns.
+        """
+        import fnmatch
+        
+        # Get relative path from repo root
+        if self.repo_root:
+            try:
+                rel_path = os.path.relpath(path, self.repo_root)
+                # Use forward slashes for glob matching consistency
+                rel_path = rel_path.replace(os.sep, '/')
+            except ValueError:
+                # Path is outside repo root
+                rel_path = path.replace(os.sep, '/')
+        else:
+            rel_path = path.replace(os.sep, '/')
+        
+        for pattern in glob_patterns:
+            # Handle ** patterns by converting them to appropriate fnmatch patterns
+            fnmatch_pattern = pattern
+            
+            # Convert ** to match subdirectories recursively
+            if '**' in pattern:
+                # fnmatch doesn't handle ** exactly like glob, so we need to handle it
+                if pattern == '**':
+                    return True  # ** matches everything
+                elif pattern.endswith('/**'):
+                    # Pattern like src/ ** should match src/ and all subdirectories
+                    base_pattern = pattern[:-3]  # Remove '/**'
+                    if rel_path.startswith(base_pattern):
+                        return True
+                    elif rel_path == base_pattern.rstrip('/'):
+                        return True
+                elif pattern.endswith('**'):
+                    # Pattern like docs/**.md should match docs/ and all subdirectories
+                    base_pattern = pattern[:-2]  # Remove '**'
+                    if rel_path.startswith(base_pattern):
+                        return True
+                elif '**/' in pattern:
+                    # Pattern like ** /test/** needs special handling
+                    parts = pattern.split('**/')
+                    if len(parts) == 2:
+                        prefix, suffix = parts
+                        if prefix == '' and suffix.endswith('/**'):
+                            # Pattern like **/docs/**
+                            base_suffix = suffix[:-3]  # Remove '/**'
+                            if rel_path.endswith(base_suffix):
+                                return True
+                        # For other ** patterns, use a more permissive approach
+                        if fnmatch.fnmatch(rel_path, pattern.replace('**', '*')):
+                            return True
+                else:
+                    # For other ** patterns, replace with * for fnmatch
+                    fnmatch_pattern = pattern.replace('**', '*')
+            
+            if fnmatch.fnmatch(rel_path, fnmatch_pattern):
+                return True
+            
+            # Also try matching against the full path
+            full_path = path.replace(os.sep, '/')
+            if fnmatch.fnmatch(full_path, fnmatch_pattern):
+                return True
+        
+        return False
+    
+    def _matches_regex(self, path: str, regex_patterns: List[Pattern[str]]) -> bool:
+        """
+        Check if path matches any of the regex patterns.
+        """
+        for pattern in regex_patterns:
+            if pattern.search(path):
+                return True
+        return False
+    
+    def is_path_allowed(self, path: str) -> bool:
+        """
+        Check if a path is allowed based on the configured patterns.
+        
+        Args:
+            path: File path to check (absolute or relative to repo_root)
+            
+        Returns:
+            True if path is allowed, False otherwise
+        """
+        # Convert to absolute path if repo_root is provided
+        if self.repo_root and not os.path.isabs(path):
+            abs_path = os.path.abspath(os.path.join(self.repo_root, path))
+        else:
+            abs_path = os.path.abspath(path)
+        
+        # Check denied patterns first (deny takes precedence)
+        if self.denied_patterns or self.denied_glob_patterns:
+            if self._matches_regex(abs_path, self.denied_patterns):
+                return False
+            if self._matches_glob(abs_path, self.denied_glob_patterns):
+                return False
+        
+        # If no allowed patterns specified, allow everything (except denied)
+        if not self.allowed_patterns and not self.allowed_glob_patterns:
+            return True
+        
+        # Check allowed patterns
+        if self.allowed_patterns or self.allowed_glob_patterns:
+            if self._matches_regex(abs_path, self.allowed_patterns):
+                return True
+            if self._matches_glob(abs_path, self.allowed_glob_patterns):
+                return True
+            return False  # Not in allowed patterns
+        
+        return True
+    
+    def get_allowed_paths_summary(self) -> str:
+        """Get a summary of allowed path patterns."""
+        if not self.allowed_patterns and not self.allowed_glob_patterns:
+            return "All paths allowed (except denied patterns)"
+        
+        patterns = []
+        patterns.extend([p.pattern for p in self.allowed_patterns])
+        patterns.extend(self.allowed_glob_patterns)
+        return f"Allowed patterns: {', '.join(patterns)}"
+    
+    def get_denied_paths_summary(self) -> str:
+        """Get a summary of denied path patterns."""
+        if not self.denied_patterns and not self.denied_glob_patterns:
+            return "No denied patterns"
+        
+        patterns = []
+        patterns.extend([p.pattern for p in self.denied_patterns])
+        patterns.extend([f"!{p}" for p in self.denied_glob_patterns])
+        return f"Denied patterns: {', '.join(patterns)}"
+
+
+def create_path_authorizer_from_config(repo_root: Optional[str] = None,
+                                     allow_paths: Optional[str] = None,
+                                     deny_paths: Optional[str] = None) -> PathAuthorizer:
+    """
+    Create a PathAuthorizer from configuration strings.
+    
+    Args:
+        repo_root: Repository root path
+        allow_paths: Comma-separated string of allowed path patterns
+        deny_paths: Comma-separated string of denied path patterns
+        
+    Returns:
+        Configured PathAuthorizer instance
+    """
+    allowed_list = None
+    denied_list = None
+    
+    if allow_paths:
+        allowed_list = [p.strip() for p in allow_paths.split(',') if p.strip()]
+    
+    if deny_paths:
+        denied_list = [p.strip() for p in deny_paths.split(',') if p.strip()]
+    
+    return PathAuthorizer(
+        allowed_patterns=allowed_list,
+        denied_patterns=denied_list,
+        repo_root=repo_root
+    )
+
+
+def enforce_path_authorization(path: str, authorizer: PathAuthorizer) -> str:
+    """
+    Enforce path authorization and return the absolute path if allowed.
+    
+    Args:
+        path: Path to check
+        authorizer: PathAuthorizer instance
+        
+    Returns:
+        Absolute path if authorized
+        
+    Raises:
+        ValueError: If path is not authorized
+    """
+    if not authorizer.is_path_allowed(path):
+        denied_summary = authorizer.get_denied_paths_summary()
+        allowed_summary = authorizer.get_allowed_paths_summary()
+        raise ValueError(
+            f"Path '{path}' is not authorized. "
+            f"{denied_summary}. {allowed_summary}"
+        )
+    
+    return os.path.abspath(path)

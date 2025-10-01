@@ -55,7 +55,9 @@ def write(repo: str = typer.Option(..., "--repo", help="Repository root path"),
          reason: Optional[str] = typer.Option(None, "--reason", help="Reason for change"), 
          ticket: Optional[str] = typer.Option(None, "--ticket", help="Ticket reference"), 
          op: str = typer.Option("edit", "--op", help="Operation type"),
-         summary: str = typer.Option("CLI write", "--summary", help="Summary of changes")):
+         summary: str = typer.Option("CLI write", "--summary", help="Summary of changes"),
+         allow_paths: Optional[str] = typer.Option(None, "--allow-paths", help="Comma-separated allowed path patterns (e.g., src/**,docs/**/*.md)"),
+         deny_paths: Optional[str] = typer.Option(None, "--deny-paths", help="Comma-separated denied path patterns with ! prefix (e.g., !**/node_modules/**,!**/.git/**)")):
     """
     Write and commit a file.
     """
@@ -74,7 +76,32 @@ def write(repo: str = typer.Option(..., "--repo", help="Repository root path"),
     else:
         content = typer.prompt("Content")
     variables = {'op': str(op), 'path': str(path), 'summary': summary, 'reason': str(reason or ''), 'ticket': str(ticket or ''), 'files': '', 'refs': ''}
-    result = write_and_commit_tool(WriteRequest(repo=repo_ref, path=path, content=content, template=template, op=op, summary=summary, reason=reason, ticket=ticket))
+    
+    # Create path authorizer if path patterns are provided
+    path_authorizer = None
+    if allow_paths or deny_paths:
+        from ..git_backend.safety import create_path_authorizer_from_config
+        path_authorizer = create_path_authorizer_from_config(
+            repo_root=repo,
+            allow_paths=allow_paths,
+            deny_paths=deny_paths
+        )
+        typer.echo(f"Path authorization enabled: {path_authorizer.get_allowed_paths_summary()}")
+        typer.echo(f"Denied paths: {path_authorizer.get_denied_paths_summary()}")
+    
+    result = write_and_commit_tool(WriteRequest(
+        repo=repo_ref, 
+        path=path, 
+        content=content, 
+        template=template, 
+        op=op, 
+        summary=summary, 
+        reason=reason, 
+        ticket=ticket,
+        allow_paths=allow_paths,
+        deny_paths=deny_paths,
+        path_authorizer=path_authorizer
+    ))
     typer.echo(f"Committed {result.commit_sha} on {result.branch}")
 
 
@@ -95,7 +122,9 @@ def staged_write(session_id: str = typer.Option(..., "--session", help="Session 
                  repo: str = typer.Option(..., "--repo", help="Repository root path"), 
                  path: str = typer.Option(..., "--path", help="File path"), 
                  file: Optional[str] = typer.Option(None, "--file", help="File to read content from"), 
-                 summary: str = typer.Option("staged write", "--summary", help="Summary of changes")):
+                 summary: str = typer.Option("staged write", "--summary", help="Summary of changes"),
+                 allow_paths: Optional[str] = typer.Option(None, "--allow-paths", help="Comma-separated allowed path patterns"),
+                 deny_paths: Optional[str] = typer.Option(None, "--deny-paths", help="Comma-separated denied path patterns")):
     """
     Write in staged session.
     """
@@ -110,7 +139,30 @@ def staged_write(session_id: str = typer.Option(..., "--session", help="Session 
     else:
         content = typer.prompt("Content")
     variables = {'op': 'staged', 'path': path, 'summary': summary}
-    result = staged_write_tool(session_id, WriteRequest(repo=repo_ref, path=path, content=content, template=template, op='staged', summary=summary))
+    
+    # Create path authorizer if path patterns are provided
+    path_authorizer = None
+    if allow_paths or deny_paths:
+        from ..git_backend.safety import create_path_authorizer_from_config
+        path_authorizer = create_path_authorizer_from_config(
+            repo_root=repo,
+            allow_paths=allow_paths,
+            deny_paths=deny_paths
+        )
+        typer.echo(f"Path authorization enabled: {path_authorizer.get_allowed_paths_summary()}")
+        typer.echo(f"Denied paths: {path_authorizer.get_denied_paths_summary()}")
+    
+    result = staged_write_tool(session_id, WriteRequest(
+        repo=repo_ref, 
+        path=path, 
+        content=content, 
+        template=template, 
+        op='staged', 
+        summary=summary,
+        allow_paths=allow_paths,
+        deny_paths=deny_paths,
+        path_authorizer=path_authorizer
+    ))
     typer.echo(f"Staged write {result.commit_sha}")
 
 
@@ -185,13 +237,33 @@ def replace(repo: str = typer.Option(..., "--repo", help="Repository root path")
             replace: str = typer.Option(..., "--replace", help="Replacement text"), 
             regex: bool = typer.Option(False, "--regex", help="Use regex"), 
             commit: bool = typer.Option(False, "--commit", help="Commit changes"), 
-            summary: str = typer.Option("text replacement", "--summary", help="Commit summary")):
+            summary: str = typer.Option("text replacement", "--summary", help="Commit summary"),
+            allow_paths: Optional[str] = typer.Option(None, "--allow-paths", help="Comma-separated allowed path patterns"),
+            deny_paths: Optional[str] = typer.Option(None, "--deny-paths", help="Comma-separated denied path patterns")):
     """
     Replace text in file and optionally commit.
     """
     from ..tools.integrate_text_replace import replace_and_commit
+    from ..git_backend.safety import create_path_authorizer_from_config, enforce_path_authorization
     repo_ref = RepoRef(root=repo)
     template = load_default_template()
+    
+    # Create path authorizer if path patterns are provided
+    if allow_paths or deny_paths:
+        path_authorizer = create_path_authorizer_from_config(
+            repo_root=repo,
+            allow_paths=allow_paths,
+            deny_paths=deny_paths
+        )
+        typer.echo(f"Path authorization enabled: {path_authorizer.get_allowed_paths_summary()}")
+        typer.echo(f"Denied paths: {path_authorizer.get_denied_paths_summary()}")
+        
+        # Check if path is authorized
+        try:
+            enforce_path_authorization(path, path_authorizer)
+        except ValueError as e:
+            typer.echo(f"Error: {e}", err=True)
+            raise typer.Exit(1)
     
     if commit:
         result = replace_and_commit(repo_ref, path, search, replace, regex, template, summary)
@@ -205,13 +277,33 @@ def replace(repo: str = typer.Option(..., "--repo", help="Repository root path")
 def patch(repo: str = typer.Option(..., "--repo", help="Repository root path"), 
           path: str = typer.Option(..., "--path", help="File path"), 
           file: Optional[str] = typer.Option(None, "--file", help="Patch file"), 
-          summary: str = typer.Option("apply patch", "--summary", help="Commit summary")):
+          summary: str = typer.Option("apply patch", "--summary", help="Commit summary"),
+          allow_paths: Optional[str] = typer.Option(None, "--allow-paths", help="Comma-separated allowed path patterns"),
+          deny_paths: Optional[str] = typer.Option(None, "--deny-paths", help="Comma-separated denied path patterns")):
     """
     Apply patch to file and commit.
     """
     from ..tools.integrate_code_diff import apply_patch_and_commit
+    from ..git_backend.safety import create_path_authorizer_from_config, enforce_path_authorization
     repo_ref = RepoRef(root=repo)
     template = load_default_template()
+    
+    # Create path authorizer if path patterns are provided
+    if allow_paths or deny_paths:
+        path_authorizer = create_path_authorizer_from_config(
+            repo_root=repo,
+            allow_paths=allow_paths,
+            deny_paths=deny_paths
+        )
+        typer.echo(f"Path authorization enabled: {path_authorizer.get_allowed_paths_summary()}")
+        typer.echo(f"Denied paths: {path_authorizer.get_denied_paths_summary()}")
+        
+        # Check if path is authorized
+        try:
+            enforce_path_authorization(path, path_authorizer)
+        except ValueError as e:
+            typer.echo(f"Error: {e}", err=True)
+            raise typer.Exit(1)
     
     if file and file != '-':
         with open(file, 'r') as f:
@@ -269,8 +361,22 @@ def serve(
         typer.echo("Use with Claude Desktop or MCP Inspector", err=True)
         
         # Import and run the FastMCP server
-        from ..mcp_server_fastmcp import main as mcp_main
-        mcp_main()
+        import subprocess
+        import sys
+        import os
+        
+        # Run the FastMCP server as a subprocess
+        server_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "server_fastmcp_new.py")
+        server_dir = os.path.dirname(os.path.dirname(__file__))
+        
+        # Set PYTHONPATH to include the parent directory so mcp_server can be imported
+        env = os.environ.copy()
+        if 'PYTHONPATH' in env:
+            env['PYTHONPATH'] = f"{os.path.dirname(server_dir)}:{env['PYTHONPATH']}"
+        else:
+            env['PYTHONPATH'] = os.path.dirname(server_dir)
+            
+        subprocess.run([sys.executable, server_file], env=env)
         
     elif transport == "tcp":
         typer.echo(f"Starting fs-git MCP server on tcp://{host}:{port}", err=True)
