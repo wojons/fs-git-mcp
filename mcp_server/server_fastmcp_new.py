@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
 """
 FastMCP server for Git-enforced filesystem operations.
-
+ 
 This provides a proper MCP server implementation using the FastMCP framework
 from the MCP Python SDK, supporting all git_fs, fs_reader, fs_text_replace,
 fs_code_diff, and fs_io tool namespaces.
 """
-
+ 
 from typing import Any, Dict, List, Optional
 import sys
 import os
 from pathlib import Path
-
+ 
 # Ensure package root is in sys.path for imports when run as script
 package_root = Path(__file__).parent.parent.parent
 if package_root not in sys.path:
     sys.path.insert(0, str(package_root))
-
+ 
 from mcp.server.fastmcp import FastMCP
-
+ 
 # Import our existing tools
 from mcp_server.tools.git_fs import (
     write_and_commit_tool,
@@ -53,24 +53,26 @@ from mcp_server.tools.integrate_file_system import (
 from mcp_server.git_backend.repo import RepoRef
 from mcp_server.git_backend.templates import CommitTemplate, load_default_template
 from mcp_server.git_backend.commits import lint_commit_message as lint_commit_msg
-
+ 
 def get_repo_ref(repo: Any) -> RepoRef:
     """Get RepoRef from repo parameter, handling string, dict, or RepoRef."""
-    if isinstance(repo, RepoRef):
+    if 'repo' in repo and isinstance(repo['repo'], (str, dict)):
+        repo = repo['repo']
+    if hasattr(repo, 'root'):
         return repo
     if isinstance(repo, str):
         return RepoRef(root=repo)
-    if not isinstance(repo, dict):
-        raise ValueError("Repo parameter must be string, dict, or RepoRef")
-    root = repo.get("root") or repo.get("path")
-    if root is None:
-        raise ValueError("Repo parameter must contain 'root' or 'path' key")
-    branch = repo.get("branch")
-    return RepoRef(root=root, branch=branch)
-
+    if hasattr(repo, 'get') and callable(repo.get):
+        root = repo.get('root') or repo.get('path')
+        if root is None:
+            raise ValueError('Repo parameter must contain \'root\' or \'path\' key')
+        branch = repo.get('branch')
+        return RepoRef(root=root, branch=branch)
+    raise ValueError('Repo parameter must be string, dict-like, or have .root attribute')
+ 
 # Create FastMCP server
 mcp = FastMCP("fs-git")
-
+ 
 # Helper function to convert dict to CommitTemplate
 def to_commit_template(template_dict: Optional[Dict[str, Any]], default_subject: str = "[{op}] {path} – {summary}") -> CommitTemplate:
     """Convert dict to CommitTemplate."""
@@ -83,7 +85,7 @@ def to_commit_template(template_dict: Optional[Dict[str, Any]], default_subject:
         trailers=template_dict.get("trailers"),
         enforce_unique_window=template_dict.get("enforce_unique_window", 100)
     )
-
+ 
 @mcp.tool()
 def write_and_commit(
     repo: Any,
@@ -116,7 +118,7 @@ def write_and_commit(
     
     result = write_and_commit_tool(request)
     return result.model_dump()
-
+ 
 @mcp.tool()
 def read_with_history(
     repo: Any,
@@ -127,7 +129,7 @@ def read_with_history(
     repo_ref = get_repo_ref(repo)
     result = read_with_history_tool(repo_ref, path, history_limit)
     return result
-
+ 
 @mcp.tool()
 def start_staged(
     repo: Any,
@@ -137,7 +139,7 @@ def start_staged(
     repo_ref = get_repo_ref(repo)
     result = start_staged_tool(repo_ref, ticket)
     return result.model_dump()
-
+ 
 @mcp.tool()
 def staged_write(
     session_id: str,
@@ -161,13 +163,13 @@ def staged_write(
     
     result = staged_write_tool(session_id, request)
     return result.model_dump()
-
+ 
 @mcp.tool()
 def staged_preview(session_id: str) -> Dict[str, Any]:
     """Preview staged changes."""
     result = staged_preview_tool(session_id)
     return result.model_dump()
-
+ 
 @mcp.tool()
 def finalize_staged(
     session_id: str,
@@ -181,13 +183,13 @@ def finalize_staged(
     )
     result = finalize_tool(session_id, finalize_opts)
     return result
-
+ 
 @mcp.tool()
 def abort_staged(session_id: str) -> Dict[str, Any]:
     """Abort a staged session."""
     result = abort_tool(session_id)
     return result
-
+ 
 @mcp.tool()
 def extract(
     repo: Any,
@@ -215,7 +217,7 @@ def extract(
     
     result = extract_tool(repo_ref, read_intent)
     return result.model_dump()
-
+ 
 @mcp.tool()
 def answer_about_file(
     repo: Any,
@@ -254,7 +256,7 @@ def answer_about_file(
             end = min(len(lines), i + after + 1)
             span_lines = lines[start:end]
             span = '\n'.join(span_lines)
-            spans.append(f"Lines {start+1}-{end}:\\n{span}")
+            spans.append(f"Lines {start+1}-{end}:\n{span}")
             
             # Add citation
             citations.append({
@@ -263,13 +265,13 @@ def answer_about_file(
             })
     
     if spans:
-        relevant_content = '\\n\\n---\\n\\n'.join(spans[:max_spans])
-        answer = f"Based on keywords from the question ('{' '.join(keywords)}'), here are relevant excerpts from the file {path} (current commit {current_commit.get('sha', 'unknown')}):\\n\\n{relevant_content}"
+        relevant_content = '\n\n---\n\n'.join(spans[:max_spans])
+        answer = f"Based on keywords from the question ('{' '.join(keywords)}'), here are relevant excerpts from the file {path} (current commit {current_commit.get('sha', 'unknown')}):\n\n{relevant_content}"
     else:
         answer = f"No lines containing keywords ('{' '.join(keywords)}') were found in the file {path}."
     
     return {"answer": answer, "citations": citations[:max_spans]}
-
+ 
 @mcp.tool()
 def replace_and_commit(
     repo: Any,
@@ -294,7 +296,7 @@ def replace_and_commit(
         summary
     )
     return {"commit_sha": result}
-
+ 
 @mcp.tool()
 def preview_diff(
     repo: Any,
@@ -313,7 +315,7 @@ def preview_diff(
         context_lines
     )
     return {"diff": result}
-
+ 
 @mcp.tool()
 def read_file(
     repo: Any,
@@ -323,10 +325,10 @@ def read_file(
     repo_ref = get_repo_ref(repo)
     result = _read_file(repo_ref, path)
     return {"content": result}
-
+ 
 def main():
     """Run the MCP server."""
     mcp.run(transport="stdio")
-
+ 
 if __name__ == "__main__":
     main()
